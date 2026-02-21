@@ -14,7 +14,7 @@ const appTitle = document.getElementById("appTitle");
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-const I18N = {
+const L10N = {
   "ko-KR": {
     step3: "Step 3. 회의 요약 결과",
     summary: "요약",
@@ -29,7 +29,7 @@ const I18N = {
     recording: "실시간 전사/통역 진행 중...",
     stopped: "전사 종료",
     modeSelected: "모드 선택",
-    unsupported: "이 브라우저는 실시간 음성 전사를 지원하지 않습니다.",
+    unsupported: "이 브라우저는 실시간 음성 인식을 지원하지 않습니다.",
     startFail: "녹음 시작에 실패했습니다. 마이크 권한을 확인하세요.",
     noteBuilding: "회의 요약 생성 중...",
     noteDone: "회의 요약 완료",
@@ -141,10 +141,11 @@ let interimTranslateController = null;
 const translateCache = new Map();
 
 let timerInterval = null;
-let timerStartAt = 0;
+let elapsedMs = 0;
+let runningStartedAt = 0;
 
-function ui() {
-  return I18N[selectedLanguage] || I18N["en-US"];
+function t() {
+  return L10N[selectedLanguage] || L10N["en-US"];
 }
 
 function escapeHtml(value = "") {
@@ -161,18 +162,18 @@ function updateStatus(message) {
 }
 
 function applyTheme(theme) {
-  const isDark = theme === "dark";
-  document.body.setAttribute("data-theme", isDark ? "dark" : "bright");
-  themeSwitch.setAttribute("aria-pressed", String(isDark));
-  localStorage.setItem("meeting-theme", isDark ? "dark" : "bright");
+  const dark = theme === "dark";
+  document.body.setAttribute("data-theme", dark ? "dark" : "bright");
+  themeSwitch.setAttribute("aria-pressed", String(dark));
+  localStorage.setItem("meeting-theme", dark ? "dark" : "bright");
 }
 
 function fitTitleOneLine() {
   if (!appTitle) return;
-  let size = window.innerWidth < 841 ? 28 : 52;
+  let size = window.innerWidth < 840 ? 34 : 64;
   appTitle.style.fontSize = `${size}px`;
   appTitle.style.whiteSpace = "nowrap";
-  while (size > 10 && appTitle.scrollWidth > appTitle.clientWidth) {
+  while (size > 12 && appTitle.scrollWidth > appTitle.clientWidth) {
     size -= 1;
     appTitle.style.fontSize = `${size}px`;
   }
@@ -188,20 +189,26 @@ function formatTime(ms) {
 }
 
 function startTimer() {
-  timerStartAt = performance.now();
-  recordTimer.textContent = "00:00.00";
+  if (timerInterval) return;
+  runningStartedAt = performance.now();
   timerInterval = setInterval(() => {
-    recordTimer.textContent = formatTime(performance.now() - timerStartAt);
+    const live = elapsedMs + (performance.now() - runningStartedAt);
+    recordTimer.textContent = formatTime(live);
   }, 10);
 }
 
 function stopTimer() {
+  if (!timerInterval) return;
+  elapsedMs += performance.now() - runningStartedAt;
   clearInterval(timerInterval);
   timerInterval = null;
+  recordTimer.textContent = formatTime(elapsedMs);
 }
 
 function resetTimer() {
   stopTimer();
+  elapsedMs = 0;
+  runningStartedAt = 0;
   recordTimer.textContent = "00:00.00";
 }
 
@@ -211,9 +218,10 @@ function autoGrowTextarea(el) {
 }
 
 function updateSectionLabels() {
-  notesTitle.innerHTML = `<span class="step-chip">Step 3</span> ${ui().step3.replace(/^Step 3\.\s*/i, "")}`;
+  const label = t().step3.replace(/^Step 3\.\s*/i, "");
+  notesTitle.innerHTML = `<span class="step-chip">Step 3</span> ${label}`;
   if (!notesOutput.textContent.trim()) {
-    notesOutput.textContent = ui().noResult;
+    notesOutput.textContent = t().noResult;
   }
 }
 
@@ -254,9 +262,8 @@ async function requestKoreanTranslation(text, options = {}) {
     })
   });
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || data.error || "translate failed");
-  }
+  if (!response.ok) throw new Error(data.detail || data.error || "translate failed");
+
   const translated = data.translatedText || "";
   translateCache.set(key, translated);
   return translated;
@@ -270,14 +277,14 @@ function queueFinalTranslation(segment) {
     return;
   }
 
-  const idx = finalKoreanSegments.push(interimKorean || segment) - 1;
+  const index = finalKoreanSegments.push(interimKorean || segment) - 1;
   requestKoreanTranslation(segment)
     .then((translated) => {
-      finalKoreanSegments[idx] = translated || segment;
+      finalKoreanSegments[index] = translated || segment;
       renderTranscriptBoxes();
     })
     .catch(() => {
-      finalKoreanSegments[idx] = segment;
+      finalKoreanSegments[index] = segment;
       renderTranscriptBoxes();
     });
 }
@@ -301,6 +308,7 @@ function scheduleInterimTranslation() {
   interimTimer = setTimeout(async () => {
     if (interimTranslateController) interimTranslateController.abort();
     interimTranslateController = new AbortController();
+
     try {
       const translated = await requestKoreanTranslation(currentInterim, {
         signal: interimTranslateController.signal
@@ -315,7 +323,7 @@ function scheduleInterimTranslation() {
         renderTranscriptBoxes();
       }
     }
-  }, 60);
+  }, 50);
 }
 
 function setupRecognition() {
@@ -362,33 +370,33 @@ function setupRecognition() {
 }
 
 function renderNotesHtml(data) {
-  const t = ui();
-  const summary = escapeHtml(data.summary || t.none);
+  const tr = t();
+  const summary = escapeHtml(data.summary || tr.none);
   const keyPoints =
     Array.isArray(data.keyPoints) && data.keyPoints.length > 0
       ? data.keyPoints.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join("<br>")
-      : escapeHtml(t.none);
+      : escapeHtml(tr.none);
   const actionItems =
     Array.isArray(data.actionItems) && data.actionItems.length > 0
       ? data.actionItems
           .map((item, idx) => {
-            const owner = escapeHtml(item.owner || t.unknown);
-            const task = escapeHtml(item.task || t.empty);
-            const due = escapeHtml(item.due || t.unknown);
-            return `${idx + 1}. [${owner}] ${task} (${escapeHtml(t.due)}: ${due})`;
+            const owner = escapeHtml(item.owner || tr.unknown);
+            const task = escapeHtml(item.task || tr.empty);
+            const due = escapeHtml(item.due || tr.unknown);
+            return `${idx + 1}. [${owner}] ${task} (${escapeHtml(tr.due)}: ${due})`;
           })
           .join("<br>")
-      : escapeHtml(t.none);
+      : escapeHtml(tr.none);
   const risks =
     Array.isArray(data.risks) && data.risks.length > 0
       ? data.risks.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join("<br>")
-      : escapeHtml(t.none);
+      : escapeHtml(tr.none);
 
   return [
-    `<strong>${escapeHtml(t.summary)}</strong><br>${summary}`,
-    `<strong>${escapeHtml(t.keyPoints)}</strong><br>${keyPoints}`,
-    `<strong>${escapeHtml(t.actionItems)}</strong><br>${actionItems}`,
-    `<strong>${escapeHtml(t.risks)}</strong><br>${risks}`
+    `<strong>${escapeHtml(tr.summary)}</strong><br>${summary}`,
+    `<strong>${escapeHtml(tr.keyPoints)}</strong><br>${keyPoints}`,
+    `<strong>${escapeHtml(tr.actionItems)}</strong><br>${actionItems}`,
+    `<strong>${escapeHtml(tr.risks)}</strong><br>${risks}`
   ].join("<br><br>");
 }
 
@@ -405,7 +413,7 @@ function resetTranscriptAndNotes() {
   transcriptKorean.value = "";
   autoGrowTextarea(transcriptOriginal);
   autoGrowTextarea(transcriptKorean);
-  notesOutput.textContent = ui().noResult;
+  notesOutput.textContent = t().noResult;
 }
 
 async function requestWakeLock() {
@@ -416,8 +424,8 @@ async function requestWakeLock() {
         wakeLock = null;
       });
     }
-  } catch (_err) {
-    updateStatus(ui().wakeLockFail);
+  } catch (_error) {
+    updateStatus(t().wakeLockFail);
   }
 }
 
@@ -435,12 +443,12 @@ function stopRecording() {
   recordBtn.classList.remove("recording");
   if (recognition) recognition.stop();
   releaseWakeLock();
-  updateStatus(ui().stopped);
+  updateStatus(t().stopped);
 }
 
 function startRecording() {
   if (!SpeechRecognition) {
-    updateStatus(ui().unsupported);
+    updateStatus(t().unsupported);
     return;
   }
 
@@ -450,14 +458,14 @@ function startRecording() {
   isRecording = true;
   recordBtn.classList.add("recording");
   startTimer();
-  updateStatus(ui().recording);
+  updateStatus(t().recording);
   requestWakeLock();
 
   try {
     recognition.start();
   } catch (_error) {
     stopRecording();
-    updateStatus(ui().startFail);
+    updateStatus(t().startFail);
   }
 }
 
@@ -551,7 +559,7 @@ languageTabs.forEach((tab) => {
     selectedLanguage = tab.dataset.lang || "ko-KR";
     if (recognition) recognition.lang = selectedLanguage;
     updateSectionLabels();
-    updateStatus(`${tab.textContent.trim()} ${ui().modeSelected}`);
+    updateStatus(`${tab.textContent.trim()} ${t().modeSelected}`);
   });
 });
 
@@ -562,30 +570,30 @@ refreshBtn.addEventListener("click", () => {
   resetTimer();
   resetTranscriptAndNotes();
   updateSectionLabels();
-  updateStatus(ui().refreshDone);
+  updateStatus(t().refreshDone);
 });
 
 notesBtn.addEventListener("click", async () => {
   const transcript = transcriptOriginal.value.trim();
   if (!transcript) {
-    updateStatus(ui().noTranscript);
+    updateStatus(t().noTranscript);
     return;
   }
 
   try {
     notesBtn.disabled = true;
-    updateStatus(ui().noteBuilding);
+    updateStatus(t().noteBuilding);
     const response = await fetch("/api/meeting-notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ transcript, languageCode: selectedLanguage })
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || data.error || ui().noteFail);
+    if (!response.ok) throw new Error(data.detail || data.error || t().noteFail);
     notesOutput.innerHTML = renderNotesHtml(data);
-    updateStatus(ui().noteDone);
+    updateStatus(t().noteDone);
   } catch (error) {
-    updateStatus(`${ui().noteFail}: ${error.message}`);
+    updateStatus(`${t().noteFail}: ${error.message}`);
   } finally {
     notesBtn.disabled = false;
   }
@@ -593,23 +601,21 @@ notesBtn.addEventListener("click", async () => {
 
 pdfBtn.addEventListener("click", async () => {
   const raw = notesOutput.textContent.trim();
-  if (!raw || raw === ui().noResult) {
-    updateStatus(ui().noPdfData);
+  if (!raw || raw === t().noResult) {
+    updateStatus(t().noPdfData);
     return;
   }
 
   try {
     pdfBtn.disabled = true;
-    updateStatus(ui().pdfMaking);
+    updateStatus(t().pdfMaking);
     const blob = await buildPdfBlob(notesOutput.innerHTML);
-    if (!blob || blob.size < 128) {
-      throw new Error("empty pdf");
-    }
+    if (!blob || blob.size < 128) throw new Error("empty pdf");
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     await savePdfBlob(blob, `meeting-minutes-${stamp}.pdf`);
-    updateStatus(ui().pdfDone);
+    updateStatus(t().pdfDone);
   } catch (error) {
-    updateStatus(`${ui().pdfFail}: ${error.message}`);
+    updateStatus(`${t().pdfFail}: ${error.message}`);
   } finally {
     pdfBtn.disabled = false;
   }
