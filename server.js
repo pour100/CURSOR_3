@@ -37,6 +37,13 @@ const speechClient = createSpeechClient();
 const sttApiKey = process.env.GOOGLE_STT_API_KEY || process.env.GOOGLE_API_KEY || "";
 const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
 const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
+const geminiModelCandidates = (
+  process.env.GEMINI_MODELS ||
+  "gemini-2.0-flash,gemini-1.5-flash,gemini-1.5-pro"
+)
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -90,6 +97,36 @@ async function transcribeWithApiKey(audioContentBase64, config) {
   }
 
   return payload;
+}
+
+async function generateNotesTextWithFallback(prompt) {
+  let lastError = null;
+
+  for (const modelName of geminiModelCandidates) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      return {
+        text: result.response.text(),
+        modelName
+      };
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message || "");
+      const isModelMismatch =
+        message.includes("is not found") ||
+        message.includes("is not supported") ||
+        message.includes("404");
+      if (!isModelMismatch) {
+        throw error;
+      }
+    }
+  }
+
+  throw (
+    lastError ||
+    new Error("No available Gemini model found for this API key.")
+  );
 }
 
 app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
@@ -154,7 +191,6 @@ app.post("/api/meeting-notes", async (req, res) => {
       return res.status(400).json({ error: "transcript is required." });
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const prompt = `
 You are a meeting assistant.
 Analyze the transcript below and return JSON only.
@@ -170,19 +206,19 @@ Transcript:
 ${transcript}
 `.trim();
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const { text, modelName } = await generateNotesTextWithFallback(prompt);
     const parsed = safeJsonParse(text);
 
     if (parsed) {
-      return res.json(parsed);
+      return res.json({ ...parsed, model: modelName });
     }
 
     return res.json({
       summary: text,
       keyPoints: [],
       actionItems: [],
-      risks: []
+      risks: [],
+      model: modelName
     });
   } catch (error) {
     console.error("Meeting notes error:", error);
