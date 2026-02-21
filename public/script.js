@@ -10,6 +10,7 @@ const transcriptOriginal = document.getElementById("transcriptOriginal");
 const transcriptKorean = document.getElementById("transcriptKorean");
 const languageTabs = document.querySelectorAll(".lang-tab");
 const themeSwitch = document.getElementById("themeSwitch");
+const appTitle = document.getElementById("appTitle");
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -24,13 +25,12 @@ const I18N = {
     unknown: "미정",
     empty: "내용 없음",
     due: "기한",
-    model: "모델",
     noResult: "아직 생성된 결과가 없습니다.",
     recording: "실시간 전사/통역 진행 중...",
     stopped: "전사 종료",
     modeSelected: "모드 선택",
     unsupported: "이 브라우저는 실시간 음성 전사를 지원하지 않습니다.",
-    startFail: "녹음 시작에 실패했습니다. 브라우저 마이크 권한을 확인하세요.",
+    startFail: "녹음 시작에 실패했습니다. 마이크 권한을 확인하세요.",
     noteBuilding: "회의 요약 생성 중...",
     noteDone: "회의 요약 완료",
     noteFail: "회의 요약 실패",
@@ -39,7 +39,8 @@ const I18N = {
     pdfDone: "PDF 저장 완료",
     pdfFail: "PDF 생성 실패",
     noPdfData: "저장할 회의 요약이 없습니다.",
-    refreshDone: "화면이 초기화되었습니다."
+    refreshDone: "화면이 초기화되었습니다.",
+    wakeLockFail: "화면 꺼짐 방지 기능을 사용할 수 없습니다."
   },
   "en-US": {
     step3: "Step 3. Meeting Summary",
@@ -51,7 +52,6 @@ const I18N = {
     unknown: "TBD",
     empty: "No details",
     due: "Due",
-    model: "Model",
     noResult: "No summary generated yet.",
     recording: "Live transcription/interpretation in progress...",
     stopped: "Transcription stopped",
@@ -66,7 +66,8 @@ const I18N = {
     pdfDone: "PDF saved",
     pdfFail: "PDF generation failed",
     noPdfData: "No meeting summary to download.",
-    refreshDone: "Screen has been reset."
+    refreshDone: "Screen has been reset.",
+    wakeLockFail: "Wake lock is not available on this browser."
   },
   "ja-JP": {
     step3: "Step 3. 会議要約結果",
@@ -78,7 +79,6 @@ const I18N = {
     unknown: "未定",
     empty: "内容なし",
     due: "期限",
-    model: "モデル",
     noResult: "まだ生成された結果がありません。",
     recording: "リアルタイム文字起こし/通訳を実行中...",
     stopped: "文字起こし終了",
@@ -93,7 +93,8 @@ const I18N = {
     pdfDone: "PDFを保存しました",
     pdfFail: "PDF生成に失敗しました",
     noPdfData: "保存する会議要約がありません。",
-    refreshDone: "画面を初期化しました。"
+    refreshDone: "画面を初期化しました。",
+    wakeLockFail: "画面スリープ防止機能を使えません。"
   },
   "zh-CN": {
     step3: "Step 3. 会议摘要结果",
@@ -105,7 +106,6 @@ const I18N = {
     unknown: "待定",
     empty: "无内容",
     due: "截止时间",
-    model: "模型",
     noResult: "尚未生成结果。",
     recording: "实时转写/同传进行中...",
     stopped: "转写已停止",
@@ -120,7 +120,8 @@ const I18N = {
     pdfDone: "PDF 已保存",
     pdfFail: "PDF 生成失败",
     noPdfData: "没有可下载的会议摘要。",
-    refreshDone: "画面已重置。"
+    refreshDone: "画面已重置。",
+    wakeLockFail: "无法使用防休眠功能。"
   }
 };
 
@@ -128,6 +129,7 @@ let selectedLanguage = "ko-KR";
 let recognition = null;
 let keepListening = false;
 let isRecording = false;
+let wakeLock = null;
 
 let finalOriginalSegments = [];
 let finalKoreanSegments = [];
@@ -145,6 +147,15 @@ function ui() {
   return I18N[selectedLanguage] || I18N["en-US"];
 }
 
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function updateStatus(message) {
   statusText.textContent = message;
 }
@@ -154,6 +165,17 @@ function applyTheme(theme) {
   document.body.setAttribute("data-theme", isDark ? "dark" : "bright");
   themeSwitch.setAttribute("aria-pressed", String(isDark));
   localStorage.setItem("meeting-theme", isDark ? "dark" : "bright");
+}
+
+function fitTitleOneLine() {
+  if (!appTitle) return;
+  let size = window.innerWidth < 841 ? 28 : 52;
+  appTitle.style.fontSize = `${size}px`;
+  appTitle.style.whiteSpace = "nowrap";
+  while (size > 10 && appTitle.scrollWidth > appTitle.clientWidth) {
+    size -= 1;
+    appTitle.style.fontSize = `${size}px`;
+  }
 }
 
 function formatTime(ms) {
@@ -189,7 +211,7 @@ function autoGrowTextarea(el) {
 }
 
 function updateSectionLabels() {
-  notesTitle.textContent = ui().step3;
+  notesTitle.innerHTML = `<span class="step-chip">Step 3</span> ${ui().step3.replace(/^Step 3\.\s*/i, "")}`;
   if (!notesOutput.textContent.trim()) {
     notesOutput.textContent = ui().noResult;
   }
@@ -218,9 +240,7 @@ function renderTranscriptBoxes() {
 
 async function requestKoreanTranslation(text, options = {}) {
   const key = `${selectedLanguage}:${text}`;
-  if (translateCache.has(key)) {
-    return translateCache.get(key);
-  }
+  if (translateCache.has(key)) return translateCache.get(key);
 
   const response = await fetch("/api/translate", {
     method: "POST",
@@ -250,7 +270,7 @@ function queueFinalTranslation(segment) {
     return;
   }
 
-  const idx = finalKoreanSegments.push(segment) - 1;
+  const idx = finalKoreanSegments.push(interimKorean || segment) - 1;
   requestKoreanTranslation(segment)
     .then((translated) => {
       finalKoreanSegments[idx] = translated || segment;
@@ -277,14 +297,10 @@ function scheduleInterimTranslation() {
     return;
   }
 
-  interimKorean = currentInterim;
-  renderTranscriptBoxes();
-
   const token = ++interimToken;
   interimTimer = setTimeout(async () => {
     if (interimTranslateController) interimTranslateController.abort();
     interimTranslateController = new AbortController();
-
     try {
       const translated = await requestKoreanTranslation(currentInterim, {
         signal: interimTranslateController.signal
@@ -299,12 +315,11 @@ function scheduleInterimTranslation() {
         renderTranscriptBoxes();
       }
     }
-  }, 120);
+  }, 60);
 }
 
 function setupRecognition() {
   if (!SpeechRecognition) return null;
-
   const instance = new SpeechRecognition();
   instance.continuous = true;
   instance.interimResults = true;
@@ -324,7 +339,6 @@ function setupRecognition() {
         nextInterim += `${text} `;
       }
     }
-
     interimOriginal = nextInterim.trim();
     renderTranscriptBoxes();
     scheduleInterimTranslation();
@@ -347,31 +361,35 @@ function setupRecognition() {
   return instance;
 }
 
-function renderNotes(data) {
+function renderNotesHtml(data) {
   const t = ui();
-  const summary = data.summary || t.none;
+  const summary = escapeHtml(data.summary || t.none);
   const keyPoints =
     Array.isArray(data.keyPoints) && data.keyPoints.length > 0
-      ? data.keyPoints.map((item, idx) => `${idx + 1}. ${item}`).join("\n")
-      : t.none;
+      ? data.keyPoints.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join("<br>")
+      : escapeHtml(t.none);
   const actionItems =
     Array.isArray(data.actionItems) && data.actionItems.length > 0
       ? data.actionItems
           .map((item, idx) => {
-            const owner = item.owner || t.unknown;
-            const task = item.task || t.empty;
-            const due = item.due || t.unknown;
-            return `${idx + 1}. [${owner}] ${task} (${t.due}: ${due})`;
+            const owner = escapeHtml(item.owner || t.unknown);
+            const task = escapeHtml(item.task || t.empty);
+            const due = escapeHtml(item.due || t.unknown);
+            return `${idx + 1}. [${owner}] ${task} (${escapeHtml(t.due)}: ${due})`;
           })
-          .join("\n")
-      : t.none;
+          .join("<br>")
+      : escapeHtml(t.none);
   const risks =
     Array.isArray(data.risks) && data.risks.length > 0
-      ? data.risks.map((item, idx) => `${idx + 1}. ${item}`).join("\n")
-      : t.none;
-  const model = data.model ? `\n\n${t.model}: ${data.model}` : "";
+      ? data.risks.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join("<br>")
+      : escapeHtml(t.none);
 
-  return `${t.summary}\n${summary}\n\n${t.keyPoints}\n${keyPoints}\n\n${t.actionItems}\n${actionItems}\n\n${t.risks}\n${risks}${model}`;
+  return [
+    `<strong>${escapeHtml(t.summary)}</strong><br>${summary}`,
+    `<strong>${escapeHtml(t.keyPoints)}</strong><br>${keyPoints}`,
+    `<strong>${escapeHtml(t.actionItems)}</strong><br>${actionItems}`,
+    `<strong>${escapeHtml(t.risks)}</strong><br>${risks}`
+  ].join("<br><br>");
 }
 
 function resetTranscriptAndNotes() {
@@ -390,12 +408,33 @@ function resetTranscriptAndNotes() {
   notesOutput.textContent = ui().noResult;
 }
 
+async function requestWakeLock() {
+  try {
+    if ("wakeLock" in navigator && !wakeLock && isRecording) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => {
+        wakeLock = null;
+      });
+    }
+  } catch (_err) {
+    updateStatus(ui().wakeLockFail);
+  }
+}
+
+async function releaseWakeLock() {
+  if (wakeLock) {
+    await wakeLock.release();
+    wakeLock = null;
+  }
+}
+
 function stopRecording() {
   keepListening = false;
   isRecording = false;
   stopTimer();
   recordBtn.classList.remove("recording");
   if (recognition) recognition.stop();
+  releaseWakeLock();
   updateStatus(ui().stopped);
 }
 
@@ -412,6 +451,7 @@ function startRecording() {
   recordBtn.classList.add("recording");
   startTimer();
   updateStatus(ui().recording);
+  requestWakeLock();
 
   try {
     recognition.start();
@@ -422,40 +462,56 @@ function startRecording() {
 }
 
 function toggleRecording() {
-  if (isRecording) {
-    stopRecording();
-  } else {
-    startRecording();
-  }
+  if (isRecording) stopRecording();
+  else startRecording();
 }
 
-async function buildPdfBlob(content) {
-  const container = document.createElement("div");
-  container.style.padding = "18px";
-  container.style.fontFamily = "'Noto Sans KR', sans-serif";
-  container.style.fontSize = "13px";
-  container.style.lineHeight = "1.6";
-  container.style.whiteSpace = "pre-wrap";
-  container.style.wordBreak = "break-word";
-  container.style.width = "780px";
-  container.textContent = content;
-  document.body.appendChild(container);
+async function buildPdfBlob(contentHtml) {
+  const renderNode = document.createElement("div");
+  renderNode.style.position = "fixed";
+  renderNode.style.left = "-10000px";
+  renderNode.style.top = "0";
+  renderNode.style.width = "800px";
+  renderNode.style.background = "#fff";
+  renderNode.style.color = "#111";
+  renderNode.style.padding = "24px";
+  renderNode.style.fontFamily = "'Noto Sans KR', sans-serif";
+  renderNode.style.fontSize = "14px";
+  renderNode.style.lineHeight = "1.6";
+  renderNode.innerHTML = contentHtml;
+  document.body.appendChild(renderNode);
 
   try {
-    const worker = window
-      .html2pdf()
-      .set({
-        margin: 10,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
-      })
-      .from(container)
-      .toPdf();
-    const pdf = await worker.get("pdf");
+    const canvas = await window.html2canvas(renderNode, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff"
+    });
+    const imgData = canvas.toDataURL("image/png");
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 24;
+    const imgWidth = pageWidth - margin * 2;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let position = 0;
+    let remaining = imgHeight;
+    pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight);
+    remaining -= pageHeight - margin * 2;
+    position -= pageHeight - margin * 2;
+
+    while (remaining > 0) {
+      pdf.addPage();
+      pdf.addImage(imgData, "PNG", margin, margin + position, imgWidth, imgHeight);
+      remaining -= pageHeight - margin * 2;
+      position -= pageHeight - margin * 2;
+    }
+
     return pdf.output("blob");
   } finally {
-    container.remove();
+    renderNode.remove();
   }
 }
 
@@ -463,12 +519,7 @@ async function savePdfBlob(blob, filename) {
   if (window.showSaveFilePicker) {
     const handle = await window.showSaveFilePicker({
       suggestedName: filename,
-      types: [
-        {
-          description: "PDF files",
-          accept: { "application/pdf": [".pdf"] }
-        }
-      ]
+      types: [{ description: "PDF files", accept: { "application/pdf": [".pdf"] } }]
     });
     const writable = await handle.createWritable();
     await writable.write(blob);
@@ -476,14 +527,19 @@ async function savePdfBlob(blob, filename) {
     return;
   }
 
-  const pdfFile = new File([blob], filename, { type: "application/pdf" });
-  if (navigator.canShare && navigator.share && navigator.canShare({ files: [pdfFile] })) {
-    await navigator.share({ files: [pdfFile], title: filename });
+  const file = new File([blob], filename, { type: "application/pdf" });
+  if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title: filename });
     return;
   }
 
   const url = URL.createObjectURL(blob);
-  window.open(url, "_blank");
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
@@ -526,7 +582,7 @@ notesBtn.addEventListener("click", async () => {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || data.error || ui().noteFail);
-    notesOutput.textContent = renderNotes(data);
+    notesOutput.innerHTML = renderNotesHtml(data);
     updateStatus(ui().noteDone);
   } catch (error) {
     updateStatus(`${ui().noteFail}: ${error.message}`);
@@ -536,8 +592,8 @@ notesBtn.addEventListener("click", async () => {
 });
 
 pdfBtn.addEventListener("click", async () => {
-  const content = notesOutput.textContent.trim();
-  if (!content || content === ui().noResult) {
+  const raw = notesOutput.textContent.trim();
+  if (!raw || raw === ui().noResult) {
     updateStatus(ui().noPdfData);
     return;
   }
@@ -545,7 +601,10 @@ pdfBtn.addEventListener("click", async () => {
   try {
     pdfBtn.disabled = true;
     updateStatus(ui().pdfMaking);
-    const blob = await buildPdfBlob(content);
+    const blob = await buildPdfBlob(notesOutput.innerHTML);
+    if (!blob || blob.size < 128) {
+      throw new Error("empty pdf");
+    }
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     await savePdfBlob(blob, `meeting-minutes-${stamp}.pdf`);
     updateStatus(ui().pdfDone);
@@ -561,16 +620,20 @@ themeSwitch.addEventListener("click", () => {
   applyTheme(next);
 });
 
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && isRecording) {
+    requestWakeLock();
+  }
+});
+
+window.addEventListener("resize", fitTitleOneLine);
+
 (function init() {
   const savedTheme = localStorage.getItem("meeting-theme");
-  if (savedTheme === "dark" || savedTheme === "bright") {
-    applyTheme(savedTheme);
-  } else {
-    applyTheme("bright");
-  }
-
+  applyTheme(savedTheme === "dark" ? "dark" : "bright");
   resetTimer();
   updateSectionLabels();
   resetTranscriptAndNotes();
   updateStatus("녹음을 시작하세요.");
+  fitTitleOneLine();
 })();

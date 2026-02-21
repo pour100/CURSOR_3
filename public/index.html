@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles.css" />
@@ -28,7 +28,7 @@
           </div>
         </div>
 
-        <h1>WOOSIK'S MEETING MINUTE GENERATOR</h1>
+        <h1 id="appTitle">WOOSIK'S MEETING MINUTE GENERATOR</h1>
         <p id="status" class="status-text">녹음을 시작하면 실시간 전사와 통역이 표시됩니다.</p>
 
         <div class="language-tabs" id="languageTabs">
@@ -41,7 +41,7 @@
 
       <section class="card flow-card">
         <div class="card-head">
-          <h2>Step 1. 실시간 전사 시작</h2>
+          <h2><span class="step-chip">Step 1</span> 실시간 전사 시작</h2>
         </div>
         <div class="record-controls">
           <button id="recordBtn" class="record-btn" aria-label="Record Toggle">
@@ -53,7 +53,7 @@
 
       <section class="card transcript-card">
         <div class="card-head">
-          <h2>Step 2. 실시간 전사 내용</h2>
+          <h2><span class="step-chip">Step 2</span> 실시간 전사 내용</h2>
         </div>
 
         <div class="dual-transcript">
@@ -82,14 +82,15 @@
 
       <section class="card notes-card">
         <div class="card-head">
-          <h2 id="notesTitle">Step 3. 회의 요약 결과</h2>
+          <h2 id="notesTitle"><span class="step-chip">Step 3</span> 회의 요약 결과</h2>
           <button id="pdfBtn" class="secondary">PDF로 다운로드</button>
         </div>
-        <pre id="notesOutput">아직 생성된 결과가 없습니다.</pre>
+        <div id="notesOutput" class="notes-output">아직 생성된 결과가 없습니다.</div>
       </section>
     </main>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="./script.js"></script>
   </body>
 </html>
