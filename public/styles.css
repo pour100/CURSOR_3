@@ -1,0 +1,145 @@
+:root {
+  --bg-top: #f8f4ec;
+  --bg-bottom: #d6e4f0;
+  --card: rgba(255, 255, 255, 0.78);
+  --text-main: #14213d;
+  --text-sub: #334e68;
+  --accent: #006d77;
+  --accent-strong: #00515a;
+  --line: rgba(20, 33, 61, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Space Grotesk", sans-serif;
+  color: var(--text-main);
+  background: radial-gradient(circle at 10% 10%, #ffe8cc 0, transparent 35%),
+    radial-gradient(circle at 90% 20%, #cde7ff 0, transparent 30%),
+    linear-gradient(160deg, var(--bg-top), var(--bg-bottom));
+}
+
+.app {
+  width: min(960px, 92%);
+  margin: 28px auto 40px;
+  display: grid;
+  gap: 16px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px;
+  backdrop-filter: blur(8px);
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+.hero p {
+  margin-top: 10px;
+  color: var(--text-sub);
+}
+
+.controls .row {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.actions,
+.upload {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+button,
+select,
+input[type="file"] {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+  transition: transform 0.14s ease, background-color 0.14s ease;
+}
+
+button:hover {
+  background: var(--accent-strong);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  transform: none;
+}
+
+select,
+input[type="file"] {
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+#status {
+  font-size: 0.96rem;
+  color: var(--text-sub);
+}
+
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 210px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.45;
+}
+
+pre {
+  margin: 10px 0 0;
+  background: #f7fafc;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+  .app {
+    width: 94%;
+    margin-top: 18px;
+  }
+  .section-title {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
