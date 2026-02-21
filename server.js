@@ -83,6 +83,14 @@ function getLanguageProfile(languageCode = "ko-KR") {
       notesInstruction: "Korean"
     };
   }
+  if (languageCode.startsWith("zh")) {
+    return {
+      languageCode: "zh-CN",
+      sttHints: ["会议", "议题", "决定", "负责人", "下周"],
+      transcriptInstruction: "Mandarin Chinese in simplified Chinese characters.",
+      notesInstruction: "Korean"
+    };
+  }
   if (languageCode.startsWith("ja")) {
     return {
       languageCode,
@@ -141,10 +149,10 @@ async function transcribeWithApiKey(audioContentBase64, config) {
   return payload;
 }
 
-async function generateNotesTextWithFallback(prompt) {
+async function generateTextWithModelFallback(prompt, candidates = geminiModelCandidates) {
   let lastError = null;
 
-  for (const modelName of geminiModelCandidates) {
+  for (const modelName of candidates) {
     try {
       const model = genAI.getGenerativeModel({ model: modelName });
       const result = await model.generateContent(prompt);
@@ -169,6 +177,10 @@ async function generateNotesTextWithFallback(prompt) {
     lastError ||
     new Error("No available Gemini model found for this API key.")
   );
+}
+
+async function generateNotesTextWithFallback(prompt) {
+  return generateTextWithModelFallback(prompt, geminiModelCandidates);
 }
 
 function shouldFallbackToGemini(sttError) {
@@ -368,6 +380,61 @@ ${transcript}
     console.error("Meeting notes error:", error);
     return res.status(500).json({
       error: "Failed to generate meeting notes.",
+      detail: error.message
+    });
+  }
+});
+
+app.post("/api/translate", async (req, res) => {
+  try {
+    if (!genAI) {
+      return res.status(500).json({
+        error: "Gemini is not configured.",
+        detail: "Set GEMINI_API_KEY or GOOGLE_API_KEY."
+      });
+    }
+
+    const {
+      text,
+      sourceLanguageCode = "en-US",
+      targetLanguageCode = "ko-KR"
+    } = req.body;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "text is required." });
+    }
+
+    const sourceProfile = getLanguageProfile(sourceLanguageCode);
+    const targetProfile = getLanguageProfile(targetLanguageCode);
+
+    const prompt = `
+You are a real-time interpreter.
+Translate the source sentence into ${targetProfile.notesInstruction}.
+Rules:
+- Keep meaning and tone.
+- No explanations.
+- Return only translated text.
+
+Source language hint: ${sourceProfile.languageCode}
+Text:
+${text}
+`.trim();
+
+    const { text: translatedText, modelName } = await generateTextWithModelFallback(
+      prompt,
+      geminiModelCandidates
+    );
+
+    return res.json({
+      translatedText: translatedText.trim(),
+      model: modelName,
+      sourceLanguageCode: sourceProfile.languageCode,
+      targetLanguageCode: targetProfile.languageCode
+    });
+  } catch (error) {
+    console.error("Translate error:", error);
+    return res.status(500).json({
+      error: "Failed to translate text.",
       detail: error.message
     });
   }

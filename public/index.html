@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Meeting STT Recorder</title>
+    <title>Woosik's meeting minute generator</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -22,56 +22,65 @@
           <span class="badge">Meeting Assistant</span>
           <span id="statusPill" class="status-pill idle">대기 중</span>
         </div>
-        <h1>Speech-To-Text 회의 미팅기록</h1>
-        <p>
-          1) 녹음/업로드 후 전사, 2) 한 번 클릭으로 회의 요약 생성.
-          모바일에서도 바로 사용할 수 있게 최적화된 화면입니다.
-        </p>
-        <p id="status" class="status-text">오디오를 녹음하거나 파일을 업로드하세요.</p>
+        <h1>Woosik's meeting minute generator</h1>
+        <p id="status" class="status-text">녹음을 시작하면 실시간 전사와 통역이 표시됩니다.</p>
+
+        <div class="language-tabs" id="languageTabs">
+          <button class="lang-tab active" data-lang="ko-KR">한국어</button>
+          <button class="lang-tab" data-lang="en-US">English</button>
+          <button class="lang-tab" data-lang="ja-JP">日本語</button>
+          <button class="lang-tab" data-lang="zh-CN">中文</button>
+        </div>
       </header>
 
       <section class="card flow-card">
         <div class="card-head">
-          <h2>Step 1. 전사 만들기</h2>
-        </div>
-
-        <div class="field">
-          <label for="languageCode">언어 코드</label>
-          <select id="languageCode">
-            <option value="ko-KR" selected>ko-KR (한국어)</option>
-            <option value="en-US">en-US (English)</option>
-            <option value="ja-JP">ja-JP (日本語)</option>
-          </select>
+          <h2>Step 1. 실시간 전사 시작</h2>
         </div>
 
         <div class="button-grid">
           <button id="startBtn" class="primary">녹음 시작</button>
           <button id="stopBtn" class="secondary" disabled>녹음 종료</button>
         </div>
-
-        <div class="upload-wrap">
-          <label for="audioFile">또는 오디오 파일 업로드</label>
-          <input id="audioFile" type="file" accept="audio/*" />
-          <button id="uploadBtn" class="primary">전사 실행</button>
-        </div>
       </section>
 
       <section class="card transcript-card">
         <div class="card-head">
-          <h2>Step 2. 전사 텍스트 확인</h2>
+          <h2>Step 2. 실시간 전사 내용</h2>
+        </div>
+        <div class="dual-transcript">
+          <div class="panel">
+            <h3>원문 전사</h3>
+            <textarea
+              id="transcriptOriginal"
+              placeholder="실시간 음성 전사가 여기에 표시됩니다."
+              readonly
+            ></textarea>
+          </div>
+          <div class="panel">
+            <h3>한국어 통역</h3>
+            <textarea
+              id="transcriptKorean"
+              placeholder="외국어 선택 시 한국어 통역이 여기에 표시됩니다."
+              readonly
+            ></textarea>
+          </div>
+        </div>
+        <div class="step2-footer">
           <button id="notesBtn" class="accent">회의 요약 생성</button>
         </div>
-        <textarea id="transcriptText" placeholder="전사 결과가 여기에 표시됩니다."></textarea>
       </section>
 
       <section class="card notes-card">
         <div class="card-head">
           <h2>Step 3. 회의 요약 결과</h2>
+          <button id="pdfBtn" class="secondary">PDF로 다운로드</button>
         </div>
         <pre id="notesOutput">아직 생성된 결과가 없습니다.</pre>
       </section>
     </main>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="./script.js"></script>
   </body>
 </html>

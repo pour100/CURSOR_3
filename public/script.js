@@ -1,28 +1,33 @@
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
-const uploadBtn = document.getElementById("uploadBtn");
 const notesBtn = document.getElementById("notesBtn");
-const audioFile = document.getElementById("audioFile");
-const transcriptText = document.getElementById("transcriptText");
+const pdfBtn = document.getElementById("pdfBtn");
 const notesOutput = document.getElementById("notesOutput");
 const statusText = document.getElementById("status");
 const statusPill = document.getElementById("statusPill");
-const languageCode = document.getElementById("languageCode");
+const transcriptOriginal = document.getElementById("transcriptOriginal");
+const transcriptKorean = document.getElementById("transcriptKorean");
+const languageTabs = document.querySelectorAll(".lang-tab");
 
-let mediaRecorder;
-let chunks = [];
-let recordedBlob = null;
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-function setStatus(message) {
-  statusText.textContent = message;
-}
+let selectedLanguage = "ko-KR";
+let recognition = null;
+let keepListening = false;
+let finalOriginalSegments = [];
+let finalKoreanSegments = [];
+let interimOriginal = "";
+let interimKorean = "";
+let translationQueue = Promise.resolve();
+let interimTimer = null;
+let interimToken = 0;
 
 function setStatusState(type) {
   statusPill.className = `status-pill ${type}`;
 }
 
 function updateStatus(message, type = "idle") {
-  setStatus(message);
+  statusText.textContent = message;
   setStatusState(type);
 }
 
@@ -44,123 +49,224 @@ function renderNotes(data) {
   const risks = Array.isArray(data.risks) && data.risks.length > 0
     ? data.risks.map((item, idx) => `${idx + 1}. ${item}`).join("\n")
     : "없음";
+  const model = data.model ? `\n\n모델: ${data.model}` : "";
 
-  const provider = data.model ? `\n\n모델: ${data.model}` : "";
-
-  return `요약\n${summary}\n\n핵심 포인트\n${keyPoints}\n\n액션 아이템\n${actionItems}\n\n리스크\n${risks}${provider}`;
+  return `요약\n${summary}\n\n핵심 포인트\n${keyPoints}\n\n액션 아이템\n${actionItems}\n\n리스크\n${risks}${model}`;
 }
 
-function lockTranscribeButtons(lock) {
-  startBtn.disabled = lock || startBtn.disabled;
-  stopBtn.disabled = lock || stopBtn.disabled;
-  uploadBtn.disabled = lock;
-}
+function renderTranscriptBoxes() {
+  const originalText = [finalOriginalSegments.join(" "), interimOriginal]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  transcriptOriginal.value = originalText;
 
-async function transcribeBlob(blob, fileName = "recording.webm") {
-  const formData = new FormData();
-  formData.append("audio", blob, fileName);
-  formData.append("languageCode", languageCode.value);
-
-  updateStatus("전사 요청 중...", "loading");
-  lockTranscribeButtons(true);
-  try {
-    const response = await fetch("/api/transcribe", {
-      method: "POST",
-      body: formData
-    });
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.detail || data.error || "전사 실패");
-    }
-
-    transcriptText.value = data.transcript || "";
-    if (data.warning) {
-      updateStatus("전사 완료 (Google STT 이슈로 보조 엔진 사용)", "success");
-    } else {
-      updateStatus("전사 완료", "success");
-    }
-  } finally {
-    lockTranscribeButtons(false);
-  }
-}
-
-startBtn.addEventListener("click", async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    chunks = [];
-    recordedBlob = null;
-
-    mediaRecorder = new MediaRecorder(stream);
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) chunks.push(event.data);
-    };
-    mediaRecorder.onstop = () => {
-      recordedBlob = new Blob(chunks, { type: "audio/webm" });
-      stream.getTracks().forEach((track) => track.stop());
-    };
-
-    mediaRecorder.start();
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    updateStatus("녹음 중...", "loading");
-  } catch (error) {
-    updateStatus(`녹음 시작 실패: ${error.message}`, "error");
-  }
-});
-
-stopBtn.addEventListener("click", async () => {
-  if (!mediaRecorder || mediaRecorder.state !== "recording") return;
-
-  mediaRecorder.stop();
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-  updateStatus("녹음 종료. 전사 중...", "loading");
-
-  setTimeout(async () => {
-    if (!recordedBlob) {
-      updateStatus("녹음 데이터가 없습니다.", "error");
-      return;
-    }
-    try {
-      await transcribeBlob(recordedBlob);
-    } catch (error) {
-      updateStatus(`전사 실패: ${error.message}`, "error");
-    }
-  }, 250);
-});
-
-uploadBtn.addEventListener("click", async () => {
-  const file = audioFile.files?.[0];
-  if (!file) {
-    updateStatus("업로드할 오디오 파일을 선택해주세요.", "error");
+  if (selectedLanguage === "ko-KR") {
+    transcriptKorean.value = originalText;
     return;
   }
 
+  const koreanText = [finalKoreanSegments.join(" "), interimKorean]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  transcriptKorean.value = koreanText;
+}
+
+async function requestKoreanTranslation(text) {
+  const response = await fetch("/api/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text,
+      sourceLanguageCode: selectedLanguage,
+      targetLanguageCode: "ko-KR"
+    })
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || data.error || "통역 실패");
+  }
+  return data.translatedText || "";
+}
+
+function queueFinalTranslation(segment) {
+  if (!segment) return;
+  if (selectedLanguage === "ko-KR") {
+    finalKoreanSegments.push(segment);
+    renderTranscriptBoxes();
+    return;
+  }
+
+  translationQueue = translationQueue
+    .then(async () => {
+      const translated = await requestKoreanTranslation(segment);
+      finalKoreanSegments.push(translated || segment);
+      interimKorean = "";
+      renderTranscriptBoxes();
+    })
+    .catch((_error) => {
+      finalKoreanSegments.push(segment);
+      renderTranscriptBoxes();
+    });
+}
+
+function scheduleInterimTranslation() {
+  if (selectedLanguage === "ko-KR") {
+    interimKorean = interimOriginal;
+    renderTranscriptBoxes();
+    return;
+  }
+
+  clearTimeout(interimTimer);
+  const currentInterim = interimOriginal.trim();
+  if (!currentInterim) {
+    interimKorean = "";
+    renderTranscriptBoxes();
+    return;
+  }
+
+  const token = ++interimToken;
+  interimTimer = setTimeout(async () => {
+    try {
+      const translated = await requestKoreanTranslation(currentInterim);
+      if (token === interimToken) {
+        interimKorean = translated;
+        renderTranscriptBoxes();
+      }
+    } catch (_error) {
+      if (token === interimToken) {
+        interimKorean = "";
+        renderTranscriptBoxes();
+      }
+    }
+  }, 450);
+}
+
+function setupRecognition() {
+  if (!SpeechRecognition) return null;
+
+  const instance = new SpeechRecognition();
+  instance.continuous = true;
+  instance.interimResults = true;
+  instance.lang = selectedLanguage;
+  instance.maxAlternatives = 1;
+
+  instance.onresult = (event) => {
+    let nextInterim = "";
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const result = event.results[i];
+      const text = (result[0]?.transcript || "").trim();
+      if (!text) continue;
+      if (result.isFinal) {
+        finalOriginalSegments.push(text);
+        queueFinalTranslation(text);
+      } else {
+        nextInterim += `${text} `;
+      }
+    }
+
+    interimOriginal = nextInterim.trim();
+    renderTranscriptBoxes();
+    scheduleInterimTranslation();
+  };
+
+  instance.onerror = (event) => {
+    updateStatus(`전사 오류: ${event.error}`, "error");
+  };
+
+  instance.onend = () => {
+    if (keepListening) {
+      try {
+        instance.start();
+      } catch (_error) {
+        updateStatus("전사 세션 재시작 실패", "error");
+      }
+    }
+  };
+
+  return instance;
+}
+
+function resetSession() {
+  finalOriginalSegments = [];
+  finalKoreanSegments = [];
+  interimOriginal = "";
+  interimKorean = "";
+  translationQueue = Promise.resolve();
+  interimToken += 1;
+  clearTimeout(interimTimer);
+  notesOutput.textContent = "아직 생성된 결과가 없습니다.";
+  renderTranscriptBoxes();
+}
+
+languageTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    languageTabs.forEach((btn) => btn.classList.remove("active"));
+    tab.classList.add("active");
+    selectedLanguage = tab.dataset.lang || "ko-KR";
+    updateStatus(`${tab.textContent.trim()} 모드 선택`, "idle");
+
+    if (recognition) {
+      recognition.lang = selectedLanguage;
+    }
+  });
+});
+
+startBtn.addEventListener("click", () => {
+  if (!SpeechRecognition) {
+    updateStatus("이 브라우저는 실시간 음성 전사를 지원하지 않습니다.", "error");
+    return;
+  }
+
+  resetSession();
+  if (!recognition) {
+    recognition = setupRecognition();
+  }
+  recognition.lang = selectedLanguage;
+
+  keepListening = true;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  updateStatus("실시간 전사/통역 진행 중...", "loading");
+
   try {
-    await transcribeBlob(file, file.name);
-  } catch (error) {
-    updateStatus(`전사 실패: ${error.message}`, "error");
+    recognition.start();
+  } catch (_error) {
+    updateStatus("녹음 시작에 실패했습니다. 브라우저 권한을 확인하세요.", "error");
+    keepListening = false;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+});
+
+stopBtn.addEventListener("click", () => {
+  keepListening = false;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  updateStatus("전사 종료", "idle");
+  if (recognition) {
+    recognition.stop();
   }
 });
 
 notesBtn.addEventListener("click", async () => {
-  const transcript = transcriptText.value.trim();
+  const transcript = transcriptOriginal.value.trim();
   if (!transcript) {
-    updateStatus("먼저 전사를 완료해주세요.", "error");
+    updateStatus("먼저 전사를 진행해주세요.", "error");
     return;
   }
 
   try {
     notesBtn.disabled = true;
     updateStatus("회의 요약 생성 중...", "loading");
+
     const response = await fetch("/api/meeting-notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript, languageCode: languageCode.value })
+      body: JSON.stringify({ transcript, languageCode: selectedLanguage })
     });
     const data = await response.json();
-    notesBtn.disabled = false;
     if (!response.ok) {
       throw new Error(data.detail || data.error || "회의 요약 실패");
     }
@@ -168,7 +274,49 @@ notesBtn.addEventListener("click", async () => {
     notesOutput.textContent = renderNotes(data);
     updateStatus("회의 요약 완료", "success");
   } catch (error) {
-    notesBtn.disabled = false;
     updateStatus(`회의 요약 실패: ${error.message}`, "error");
+  } finally {
+    notesBtn.disabled = false;
+  }
+});
+
+pdfBtn.addEventListener("click", async () => {
+  const content = notesOutput.textContent.trim();
+  if (!content || content === "아직 생성된 결과가 없습니다.") {
+    updateStatus("다운로드할 회의 요약이 없습니다.", "error");
+    return;
+  }
+
+  try {
+    pdfBtn.disabled = true;
+    updateStatus("PDF 생성 중...", "loading");
+
+    const wrapper = document.createElement("div");
+    wrapper.style.padding = "18px";
+    wrapper.style.fontFamily = "'Noto Sans KR', sans-serif";
+    wrapper.style.fontSize = "13px";
+    wrapper.style.lineHeight = "1.6";
+    wrapper.style.whiteSpace = "pre-wrap";
+    wrapper.style.wordBreak = "break-word";
+    wrapper.textContent = content;
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    await window
+      .html2pdf()
+      .set({
+        margin: 10,
+        filename: `meeting-minutes-${timestamp}.pdf`,
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
+      })
+      .from(wrapper)
+      .save();
+
+    updateStatus("PDF 다운로드 완료", "success");
+  } catch (error) {
+    updateStatus(`PDF 생성 실패: ${error.message}`, "error");
+  } finally {
+    pdfBtn.disabled = false;
   }
 });
