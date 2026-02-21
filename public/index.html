@@ -19,9 +19,12 @@
     <main class="app-shell">
       <header class="card hero">
         <div class="hero-top">
-          <div class="theme-tabs">
-            <button id="brightModeBtn" class="theme-tab active" data-theme="bright">Bright</button>
-            <button id="darkModeBtn" class="theme-tab" data-theme="dark">Dark</button>
+          <div class="theme-switch-wrap">
+            <span class="theme-label">Bright</span>
+            <button id="themeSwitch" class="theme-switch" aria-label="Theme Switch" aria-pressed="false">
+              <span class="theme-knob"></span>
+            </button>
+            <span class="theme-label">Dark</span>
           </div>
         </div>
 

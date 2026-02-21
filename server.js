@@ -50,6 +50,13 @@ const geminiModelCandidates = (
   .split(",")
   .map((m) => m.trim())
   .filter(Boolean);
+const geminiTranslateModelCandidates = (
+  process.env.GEMINI_TRANSLATE_MODELS ||
+  "gemini-2.0-flash,gemini-1.5-flash,gemini-1.5-pro"
+)
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -397,7 +404,8 @@ app.post("/api/translate", async (req, res) => {
     const {
       text,
       sourceLanguageCode = "en-US",
-      targetLanguageCode = "ko-KR"
+      targetLanguageCode = "ko-KR",
+      fast = false
     } = req.body;
 
     if (!text || !text.trim()) {
@@ -407,7 +415,9 @@ app.post("/api/translate", async (req, res) => {
     const sourceProfile = getLanguageProfile(sourceLanguageCode);
     const targetProfile = getLanguageProfile(targetLanguageCode);
 
-    const prompt = `
+    const prompt = fast
+      ? `Translate this to ${targetProfile.notesInstruction}. Return translated text only.\n\n${text}`
+      : `
 You are a real-time interpreter.
 Translate the source sentence into ${targetProfile.notesInstruction}.
 Rules:
@@ -422,7 +432,7 @@ ${text}
 
     const { text: translatedText, modelName } = await generateTextWithModelFallback(
       prompt,
-      geminiModelCandidates
+      geminiTranslateModelCandidates
     );
 
     return res.json({

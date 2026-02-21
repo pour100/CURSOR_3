@@ -103,35 +103,50 @@ p {
   margin-bottom: 6px;
 }
 
-.theme-tabs {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+.theme-switch-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.theme-tab {
-  height: 34px;
-  padding: 0 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
+.theme-label {
+  font-size: 0.82rem;
+  color: var(--sub-ink);
   font-weight: 700;
+}
+
+.theme-switch {
+  width: 58px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--secondary);
+  padding: 3px;
+  position: relative;
   cursor: pointer;
 }
 
-.theme-tab.active {
-  background: var(--secondary);
-  color: #fff;
+.theme-knob {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  display: block;
+  transform: translateX(0);
+  transition: transform 0.18s ease;
+}
+
+body[data-theme="dark"] .theme-knob {
+  transform: translateX(26px);
 }
 
 .hero h1 {
-  font-size: clamp(1.32rem, 5vw, 2.5rem);
-  line-height: 1.18;
+  font-size: clamp(0.66rem, 2.28vw, 2.5rem);
+  line-height: 1.2;
   margin-bottom: 6px;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .status-text {
@@ -176,17 +191,16 @@ p {
 }
 
 .record-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .record-btn {
-  width: 132px;
-  height: 132px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
   border: 0;
-  border-radius: 50%;
+  border-radius: 22px;
   background: var(--record);
   color: #fff;
   font: inherit;
@@ -217,13 +231,15 @@ p {
 }
 
 .refresh-btn {
-  height: 46px;
-  padding: 0 16px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  padding: 0 10px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 22px;
   background: var(--secondary);
   color: #fff;
   font: inherit;
+  font-size: 1.02rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -342,15 +358,19 @@ pre {
 
   .record-controls {
     width: 100%;
-    justify-content: space-between;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .record-btn {
-    width: 112px;
-    height: 112px;
+    width: 100%;
   }
 
   .refresh-btn {
-    flex: 1;
+    width: 100%;
+  }
+
+  .hero h1 {
+    font-size: 0.62rem;
+    white-space: nowrap;
   }
 }
