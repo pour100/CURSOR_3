@@ -33,6 +33,7 @@ GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\google-service-account.json
 Notes:
 - STT auth supports either service-account credentials (`GOOGLE_CREDENTIALS_JSON` or `GOOGLE_APPLICATION_CREDENTIALS`) or API key (`GOOGLE_STT_API_KEY`).
 - `GOOGLE_API_KEY` can be used as a shared fallback key for both Gemini and STT.
+- If Google Speech API is unavailable, transcription automatically falls back to Gemini audio transcription when `GEMINI_API_KEY` is configured.
 
 ## Google Speech Setup
 1. Create or select a Google Cloud project
