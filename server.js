@@ -88,7 +88,7 @@ function getLanguageProfile(languageCode = "ko-KR") {
       languageCode: "zh-CN",
       sttHints: ["会议", "议题", "决定", "负责人", "下周"],
       transcriptInstruction: "Mandarin Chinese in simplified Chinese characters.",
-      notesInstruction: "Korean"
+      notesInstruction: "Chinese"
     };
   }
   if (languageCode.startsWith("ja")) {

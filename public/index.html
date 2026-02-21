@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Woosik's meeting minute generator</title>
+    <title>WOOSIK'S MEETING MINUTE GENERATOR</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -12,17 +12,20 @@
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
+  <body data-theme="bright">
     <div class="bg-shape bg-shape-a"></div>
     <div class="bg-shape bg-shape-b"></div>
 
     <main class="app-shell">
       <header class="card hero">
         <div class="hero-top">
-          <span class="badge">Meeting Assistant</span>
-          <span id="statusPill" class="status-pill idle">대기 중</span>
+          <div class="theme-tabs">
+            <button id="brightModeBtn" class="theme-tab active" data-theme="bright">Bright</button>
+            <button id="darkModeBtn" class="theme-tab" data-theme="dark">Dark</button>
+          </div>
         </div>
-        <h1>Woosik's meeting minute generator</h1>
+
+        <h1>WOOSIK'S MEETING MINUTE GENERATOR</h1>
         <p id="status" class="status-text">녹음을 시작하면 실시간 전사와 통역이 표시됩니다.</p>
 
         <div class="language-tabs" id="languageTabs">
@@ -37,10 +40,11 @@
         <div class="card-head">
           <h2>Step 1. 실시간 전사 시작</h2>
         </div>
-
-        <div class="button-grid">
-          <button id="startBtn" class="primary">녹음 시작</button>
-          <button id="stopBtn" class="secondary" disabled>녹음 종료</button>
+        <div class="record-controls">
+          <button id="recordBtn" class="record-btn" aria-label="Record Toggle">
+            <span id="recordTimer">00:00.00</span>
+          </button>
+          <button id="refreshBtn" class="refresh-btn">Refresh 박스</button>
         </div>
       </section>
 
@@ -48,6 +52,7 @@
         <div class="card-head">
           <h2>Step 2. 실시간 전사 내용</h2>
         </div>
+
         <div class="dual-transcript">
           <div class="panel">
             <h3>원문 전사</h3>
@@ -66,6 +71,7 @@
             ></textarea>
           </div>
         </div>
+
         <div class="step2-footer">
           <button id="notesBtn" class="accent">회의 요약 생성</button>
         </div>
@@ -73,7 +79,7 @@
 
       <section class="card notes-card">
         <div class="card-head">
-          <h2>Step 3. 회의 요약 결과</h2>
+          <h2 id="notesTitle">Step 3. 회의 요약 결과</h2>
           <button id="pdfBtn" class="secondary">PDF로 다운로드</button>
         </div>
         <pre id="notesOutput">아직 생성된 결과가 없습니다.</pre>

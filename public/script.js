@@ -1,57 +1,194 @@
-const startBtn = document.getElementById("startBtn");
-const stopBtn = document.getElementById("stopBtn");
+const recordBtn = document.getElementById("recordBtn");
+const refreshBtn = document.getElementById("refreshBtn");
+const recordTimer = document.getElementById("recordTimer");
 const notesBtn = document.getElementById("notesBtn");
 const pdfBtn = document.getElementById("pdfBtn");
 const notesOutput = document.getElementById("notesOutput");
+const notesTitle = document.getElementById("notesTitle");
 const statusText = document.getElementById("status");
-const statusPill = document.getElementById("statusPill");
 const transcriptOriginal = document.getElementById("transcriptOriginal");
 const transcriptKorean = document.getElementById("transcriptKorean");
 const languageTabs = document.querySelectorAll(".lang-tab");
+const brightModeBtn = document.getElementById("brightModeBtn");
+const darkModeBtn = document.getElementById("darkModeBtn");
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+const I18N = {
+  "ko-KR": {
+    step3: "Step 3. 회의 요약 결과",
+    summary: "요약",
+    keyPoints: "핵심 포인트",
+    actionItems: "액션 아이템",
+    risks: "리스크",
+    none: "없음",
+    unknown: "미정",
+    empty: "내용 없음",
+    due: "기한",
+    model: "모델",
+    noResult: "아직 생성된 결과가 없습니다.",
+    recording: "실시간 전사/통역 진행 중...",
+    stopped: "전사 종료",
+    modeSelected: "모드 선택",
+    unsupported: "이 브라우저는 실시간 음성 전사를 지원하지 않습니다.",
+    startFail: "녹음 시작에 실패했습니다. 브라우저 권한을 확인하세요.",
+    noteBuilding: "회의 요약 생성 중...",
+    noteDone: "회의 요약 완료",
+    noteFail: "회의 요약 실패",
+    noTranscript: "먼저 전사를 진행해주세요.",
+    pdfMaking: "PDF 생성 중...",
+    pdfDone: "PDF 저장 완료",
+    pdfFail: "PDF 생성 실패",
+    noPdfData: "저장할 회의 요약이 없습니다."
+  },
+  "en-US": {
+    step3: "Step 3. Meeting Summary",
+    summary: "Summary",
+    keyPoints: "Key Points",
+    actionItems: "Action Items",
+    risks: "Risks",
+    none: "None",
+    unknown: "TBD",
+    empty: "No details",
+    due: "Due",
+    model: "Model",
+    noResult: "No summary generated yet.",
+    recording: "Live transcription/interpretation in progress...",
+    stopped: "Transcription stopped",
+    modeSelected: "mode selected",
+    unsupported: "This browser does not support live speech recognition.",
+    startFail: "Failed to start recording. Check browser microphone permissions.",
+    noteBuilding: "Generating meeting summary...",
+    noteDone: "Meeting summary completed",
+    noteFail: "Meeting summary failed",
+    noTranscript: "Run transcription first.",
+    pdfMaking: "Generating PDF...",
+    pdfDone: "PDF saved",
+    pdfFail: "PDF generation failed",
+    noPdfData: "No meeting summary to download."
+  },
+  "ja-JP": {
+    step3: "Step 3. 会議要約結果",
+    summary: "要約",
+    keyPoints: "主要ポイント",
+    actionItems: "アクション項目",
+    risks: "リスク",
+    none: "なし",
+    unknown: "未定",
+    empty: "内容なし",
+    due: "期限",
+    model: "モデル",
+    noResult: "まだ生成された結果がありません。",
+    recording: "リアルタイム文字起こし/通訳を実行中...",
+    stopped: "文字起こし終了",
+    modeSelected: "モードを選択",
+    unsupported: "このブラウザはリアルタイム音声認識に対応していません。",
+    startFail: "録音開始に失敗しました。ブラウザ権限を確認してください。",
+    noteBuilding: "会議要約を生成中...",
+    noteDone: "会議要約が完了しました",
+    noteFail: "会議要約に失敗しました",
+    noTranscript: "先に文字起こしを実行してください。",
+    pdfMaking: "PDFを生成中...",
+    pdfDone: "PDFを保存しました",
+    pdfFail: "PDF生成に失敗しました",
+    noPdfData: "保存する会議要約がありません。"
+  },
+  "zh-CN": {
+    step3: "Step 3. 会议摘要结果",
+    summary: "摘要",
+    keyPoints: "关键要点",
+    actionItems: "行动项",
+    risks: "风险",
+    none: "无",
+    unknown: "待定",
+    empty: "无内容",
+    due: "截止时间",
+    model: "模型",
+    noResult: "尚未生成结果。",
+    recording: "实时转写/同传进行中...",
+    stopped: "转写已停止",
+    modeSelected: "模式已选择",
+    unsupported: "当前浏览器不支持实时语音识别。",
+    startFail: "录音启动失败，请检查浏览器麦克风权限。",
+    noteBuilding: "正在生成会议摘要...",
+    noteDone: "会议摘要生成完成",
+    noteFail: "会议摘要生成失败",
+    noTranscript: "请先进行转写。",
+    pdfMaking: "正在生成 PDF...",
+    pdfDone: "PDF 已保存",
+    pdfFail: "PDF 生成失败",
+    noPdfData: "没有可下载的会议摘要。"
+  }
+};
 
 let selectedLanguage = "ko-KR";
 let recognition = null;
 let keepListening = false;
+let isRecording = false;
+
 let finalOriginalSegments = [];
 let finalKoreanSegments = [];
 let interimOriginal = "";
 let interimKorean = "";
-let translationQueue = Promise.resolve();
 let interimTimer = null;
 let interimToken = 0;
 
-function setStatusState(type) {
-  statusPill.className = `status-pill ${type}`;
+let timerInterval = null;
+let timerStartAt = 0;
+
+function ui() {
+  return I18N[selectedLanguage] || I18N["en-US"];
 }
 
-function updateStatus(message, type = "idle") {
+function updateStatus(message) {
   statusText.textContent = message;
-  setStatusState(type);
 }
 
-function renderNotes(data) {
-  const summary = data.summary || "요약 없음";
-  const keyPoints = Array.isArray(data.keyPoints) && data.keyPoints.length > 0
-    ? data.keyPoints.map((item, idx) => `${idx + 1}. ${item}`).join("\n")
-    : "없음";
-  const actionItems = Array.isArray(data.actionItems) && data.actionItems.length > 0
-    ? data.actionItems
-        .map((item, idx) => {
-          const owner = item.owner || "미정";
-          const task = item.task || "내용 없음";
-          const due = item.due || "미정";
-          return `${idx + 1}. [${owner}] ${task} (기한: ${due})`;
-        })
-        .join("\n")
-    : "없음";
-  const risks = Array.isArray(data.risks) && data.risks.length > 0
-    ? data.risks.map((item, idx) => `${idx + 1}. ${item}`).join("\n")
-    : "없음";
-  const model = data.model ? `\n\n모델: ${data.model}` : "";
+function applyTheme(theme) {
+  document.body.setAttribute("data-theme", theme);
+  brightModeBtn.classList.toggle("active", theme === "bright");
+  darkModeBtn.classList.toggle("active", theme === "dark");
+  localStorage.setItem("meeting-theme", theme);
+}
 
-  return `요약\n${summary}\n\n핵심 포인트\n${keyPoints}\n\n액션 아이템\n${actionItems}\n\n리스크\n${risks}${model}`;
+function formatTime(ms) {
+  const centiseconds = Math.floor(ms / 10) % 100;
+  const seconds = Math.floor(ms / 1000) % 60;
+  const minutes = Math.floor(ms / 60000);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(
+    centiseconds
+  ).padStart(2, "0")}`;
+}
+
+function startTimer() {
+  timerStartAt = performance.now();
+  recordTimer.textContent = "00:00.00";
+  timerInterval = setInterval(() => {
+    const elapsed = performance.now() - timerStartAt;
+    recordTimer.textContent = formatTime(elapsed);
+  }, 10);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
+
+function resetTimer() {
+  stopTimer();
+  recordTimer.textContent = "00:00.00";
+}
+
+function autoGrowTextarea(el) {
+  el.style.height = "auto";
+  el.style.height = `${Math.max(el.scrollHeight, 150)}px`;
+}
+
+function updateSectionLabels() {
+  notesTitle.textContent = ui().step3;
+  if (!notesOutput.textContent.trim()) {
+    notesOutput.textContent = ui().noResult;
+  }
 }
 
 function renderTranscriptBoxes() {
@@ -63,14 +200,16 @@ function renderTranscriptBoxes() {
 
   if (selectedLanguage === "ko-KR") {
     transcriptKorean.value = originalText;
-    return;
+  } else {
+    const koreanText = [finalKoreanSegments.join(" "), interimKorean]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    transcriptKorean.value = koreanText;
   }
 
-  const koreanText = [finalKoreanSegments.join(" "), interimKorean]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  transcriptKorean.value = koreanText;
+  autoGrowTextarea(transcriptOriginal);
+  autoGrowTextarea(transcriptKorean);
 }
 
 async function requestKoreanTranslation(text) {
@@ -85,28 +224,28 @@ async function requestKoreanTranslation(text) {
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.detail || data.error || "통역 실패");
+    throw new Error(data.detail || data.error || "translate failed");
   }
   return data.translatedText || "";
 }
 
 function queueFinalTranslation(segment) {
   if (!segment) return;
+
   if (selectedLanguage === "ko-KR") {
     finalKoreanSegments.push(segment);
     renderTranscriptBoxes();
     return;
   }
 
-  translationQueue = translationQueue
-    .then(async () => {
-      const translated = await requestKoreanTranslation(segment);
-      finalKoreanSegments.push(translated || segment);
-      interimKorean = "";
+  const idx = finalKoreanSegments.push("...") - 1;
+  requestKoreanTranslation(segment)
+    .then((translated) => {
+      finalKoreanSegments[idx] = translated || segment;
       renderTranscriptBoxes();
     })
-    .catch((_error) => {
-      finalKoreanSegments.push(segment);
+    .catch(() => {
+      finalKoreanSegments[idx] = segment;
       renderTranscriptBoxes();
     });
 }
@@ -140,7 +279,7 @@ function scheduleInterimTranslation() {
         renderTranscriptBoxes();
       }
     }
-  }, 450);
+  }, 320);
 }
 
 function setupRecognition() {
@@ -154,10 +293,12 @@ function setupRecognition() {
 
   instance.onresult = (event) => {
     let nextInterim = "";
+
     for (let i = event.resultIndex; i < event.results.length; i += 1) {
       const result = event.results[i];
       const text = (result[0]?.transcript || "").trim();
       if (!text) continue;
+
       if (result.isFinal) {
         finalOriginalSegments.push(text);
         queueFinalTranslation(text);
@@ -172,7 +313,7 @@ function setupRecognition() {
   };
 
   instance.onerror = (event) => {
-    updateStatus(`전사 오류: ${event.error}`, "error");
+    updateStatus(`Error: ${event.error}`);
   };
 
   instance.onend = () => {
@@ -180,7 +321,7 @@ function setupRecognition() {
       try {
         instance.start();
       } catch (_error) {
-        updateStatus("전사 세션 재시작 실패", "error");
+        stopRecording();
       }
     }
   };
@@ -188,78 +329,180 @@ function setupRecognition() {
   return instance;
 }
 
-function resetSession() {
+function renderNotes(data) {
+  const t = ui();
+  const summary = data.summary || t.none;
+  const keyPoints =
+    Array.isArray(data.keyPoints) && data.keyPoints.length > 0
+      ? data.keyPoints.map((item, idx) => `${idx + 1}. ${item}`).join("\n")
+      : t.none;
+  const actionItems =
+    Array.isArray(data.actionItems) && data.actionItems.length > 0
+      ? data.actionItems
+          .map((item, idx) => {
+            const owner = item.owner || t.unknown;
+            const task = item.task || t.empty;
+            const due = item.due || t.unknown;
+            return `${idx + 1}. [${owner}] ${task} (${t.due}: ${due})`;
+          })
+          .join("\n")
+      : t.none;
+  const risks =
+    Array.isArray(data.risks) && data.risks.length > 0
+      ? data.risks.map((item, idx) => `${idx + 1}. ${item}`).join("\n")
+      : t.none;
+  const model = data.model ? `\n\n${t.model}: ${data.model}` : "";
+
+  return `${t.summary}\n${summary}\n\n${t.keyPoints}\n${keyPoints}\n\n${t.actionItems}\n${actionItems}\n\n${t.risks}\n${risks}${model}`;
+}
+
+function resetTranscriptAndNotes() {
   finalOriginalSegments = [];
   finalKoreanSegments = [];
   interimOriginal = "";
   interimKorean = "";
-  translationQueue = Promise.resolve();
   interimToken += 1;
   clearTimeout(interimTimer);
-  notesOutput.textContent = "아직 생성된 결과가 없습니다.";
-  renderTranscriptBoxes();
+
+  transcriptOriginal.value = "";
+  transcriptKorean.value = "";
+  autoGrowTextarea(transcriptOriginal);
+  autoGrowTextarea(transcriptKorean);
+
+  notesOutput.textContent = ui().noResult;
 }
 
-languageTabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    languageTabs.forEach((btn) => btn.classList.remove("active"));
-    tab.classList.add("active");
-    selectedLanguage = tab.dataset.lang || "ko-KR";
-    updateStatus(`${tab.textContent.trim()} 모드 선택`, "idle");
+function stopRecording() {
+  keepListening = false;
+  isRecording = false;
+  stopTimer();
+  recordBtn.classList.remove("recording");
+  if (recognition) recognition.stop();
+  updateStatus(ui().stopped);
+}
 
-    if (recognition) {
-      recognition.lang = selectedLanguage;
-    }
-  });
-});
-
-startBtn.addEventListener("click", () => {
+function startRecording() {
   if (!SpeechRecognition) {
-    updateStatus("이 브라우저는 실시간 음성 전사를 지원하지 않습니다.", "error");
+    updateStatus(ui().unsupported);
     return;
   }
 
-  resetSession();
-  if (!recognition) {
-    recognition = setupRecognition();
-  }
+  if (!recognition) recognition = setupRecognition();
   recognition.lang = selectedLanguage;
 
   keepListening = true;
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-  updateStatus("실시간 전사/통역 진행 중...", "loading");
+  isRecording = true;
+  recordBtn.classList.add("recording");
+  updateStatus(ui().recording);
+  startTimer();
 
   try {
     recognition.start();
   } catch (_error) {
-    updateStatus("녹음 시작에 실패했습니다. 브라우저 권한을 확인하세요.", "error");
-    keepListening = false;
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
+    stopRecording();
+    updateStatus(ui().startFail);
   }
+}
+
+function toggleRecording() {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
+async function buildPdfBlob(content) {
+  const container = document.createElement("div");
+  container.style.padding = "18px";
+  container.style.fontFamily = "'Noto Sans KR', sans-serif";
+  container.style.fontSize = "13px";
+  container.style.lineHeight = "1.6";
+  container.style.whiteSpace = "pre-wrap";
+  container.style.wordBreak = "break-word";
+  container.style.width = "780px";
+  container.textContent = content;
+  document.body.appendChild(container);
+
+  try {
+    const worker = window
+      .html2pdf()
+      .set({
+        margin: 10,
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
+      })
+      .from(container)
+      .toPdf();
+
+    const pdf = await worker.get("pdf");
+    return pdf.output("blob");
+  } finally {
+    container.remove();
+  }
+}
+
+async function savePdfBlob(blob, filename) {
+  if (window.showSaveFilePicker) {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: filename,
+      types: [
+        {
+          description: "PDF files",
+          accept: { "application/pdf": [".pdf"] }
+        }
+      ]
+    });
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return;
+  }
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+languageTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    if (isRecording) return;
+
+    languageTabs.forEach((btn) => btn.classList.remove("active"));
+    tab.classList.add("active");
+    selectedLanguage = tab.dataset.lang || "ko-KR";
+    if (recognition) recognition.lang = selectedLanguage;
+    updateSectionLabels();
+    updateStatus(`${tab.textContent.trim()} ${ui().modeSelected}`);
+  });
 });
 
-stopBtn.addEventListener("click", () => {
-  keepListening = false;
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-  updateStatus("전사 종료", "idle");
-  if (recognition) {
-    recognition.stop();
-  }
+recordBtn.addEventListener("click", toggleRecording);
+
+refreshBtn.addEventListener("click", () => {
+  if (isRecording) stopRecording();
+  resetTimer();
+  resetTranscriptAndNotes();
+  updateSectionLabels();
+  updateStatus("화면이 초기화되었습니다.");
 });
 
 notesBtn.addEventListener("click", async () => {
   const transcript = transcriptOriginal.value.trim();
   if (!transcript) {
-    updateStatus("먼저 전사를 진행해주세요.", "error");
+    updateStatus(ui().noTranscript);
     return;
   }
 
   try {
     notesBtn.disabled = true;
-    updateStatus("회의 요약 생성 중...", "loading");
+    updateStatus(ui().noteBuilding);
 
     const response = await fetch("/api/meeting-notes", {
       method: "POST",
@@ -268,13 +511,13 @@ notesBtn.addEventListener("click", async () => {
     });
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.detail || data.error || "회의 요약 실패");
+      throw new Error(data.detail || data.error || ui().noteFail);
     }
 
     notesOutput.textContent = renderNotes(data);
-    updateStatus("회의 요약 완료", "success");
+    updateStatus(ui().noteDone);
   } catch (error) {
-    updateStatus(`회의 요약 실패: ${error.message}`, "error");
+    updateStatus(`${ui().noteFail}: ${error.message}`);
   } finally {
     notesBtn.disabled = false;
   }
@@ -282,41 +525,40 @@ notesBtn.addEventListener("click", async () => {
 
 pdfBtn.addEventListener("click", async () => {
   const content = notesOutput.textContent.trim();
-  if (!content || content === "아직 생성된 결과가 없습니다.") {
-    updateStatus("다운로드할 회의 요약이 없습니다.", "error");
+  if (!content || content === ui().noResult) {
+    updateStatus(ui().noPdfData);
     return;
   }
 
   try {
     pdfBtn.disabled = true;
-    updateStatus("PDF 생성 중...", "loading");
+    updateStatus(ui().pdfMaking);
 
-    const wrapper = document.createElement("div");
-    wrapper.style.padding = "18px";
-    wrapper.style.fontFamily = "'Noto Sans KR', sans-serif";
-    wrapper.style.fontSize = "13px";
-    wrapper.style.lineHeight = "1.6";
-    wrapper.style.whiteSpace = "pre-wrap";
-    wrapper.style.wordBreak = "break-word";
-    wrapper.textContent = content;
+    const blob = await buildPdfBlob(content);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    await savePdfBlob(blob, `meeting-minutes-${stamp}.pdf`);
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    await window
-      .html2pdf()
-      .set({
-        margin: 10,
-        filename: `meeting-minutes-${timestamp}.pdf`,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
-      })
-      .from(wrapper)
-      .save();
-
-    updateStatus("PDF 다운로드 완료", "success");
+    updateStatus(ui().pdfDone);
   } catch (error) {
-    updateStatus(`PDF 생성 실패: ${error.message}`, "error");
+    updateStatus(`${ui().pdfFail}: ${error.message}`);
   } finally {
     pdfBtn.disabled = false;
   }
 });
+
+brightModeBtn.addEventListener("click", () => applyTheme("bright"));
+darkModeBtn.addEventListener("click", () => applyTheme("dark"));
+
+(function init() {
+  const savedTheme = localStorage.getItem("meeting-theme");
+  if (savedTheme === "dark" || savedTheme === "bright") {
+    applyTheme(savedTheme);
+  } else {
+    applyTheme("bright");
+  }
+
+  resetTimer();
+  updateSectionLabels();
+  resetTranscriptAndNotes();
+  updateStatus("녹음을 시작하세요.");
+})();
