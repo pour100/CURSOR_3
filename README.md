@@ -24,8 +24,15 @@ Create `.env` using `.env.example`:
 ```env
 PORT=3000
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+GOOGLE_STT_API_KEY=YOUR_GOOGLE_STT_API_KEY
+GOOGLE_API_KEY=
+GOOGLE_CREDENTIALS_JSON=
 GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\google-service-account.json
 ```
+
+Notes:
+- STT auth supports either service-account credentials (`GOOGLE_CREDENTIALS_JSON` or `GOOGLE_APPLICATION_CREDENTIALS`) or API key (`GOOGLE_STT_API_KEY`).
+- `GOOGLE_API_KEY` can be used as a shared fallback key for both Gemini and STT.
 
 ## Google Speech Setup
 1. Create or select a Google Cloud project

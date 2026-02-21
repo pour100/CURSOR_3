@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const dotenv = require("dotenv");
@@ -15,8 +15,27 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }
 });
 
-const speechClient = new SpeechClient();
-const geminiApiKey = process.env.GEMINI_API_KEY;
+function createSpeechClient() {
+  const inlineCredentials = process.env.GOOGLE_CREDENTIALS_JSON;
+  if (inlineCredentials) {
+    try {
+      const parsed = JSON.parse(inlineCredentials);
+      return new SpeechClient({ credentials: parsed });
+    } catch (error) {
+      console.error("Invalid GOOGLE_CREDENTIALS_JSON:", error.message);
+    }
+  }
+
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    return new SpeechClient();
+  }
+
+  return null;
+}
+
+const speechClient = createSpeechClient();
+const sttApiKey = process.env.GOOGLE_STT_API_KEY || process.env.GOOGLE_API_KEY || "";
+const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
 const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
 
 app.use(express.json({ limit: "10mb" }));
@@ -51,26 +70,58 @@ function safeJsonParse(text) {
   }
 }
 
+async function transcribeWithApiKey(audioContentBase64, config) {
+  const response = await fetch(
+    `https://speech.googleapis.com/v1/speech:recognize?key=${sttApiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        config,
+        audio: { content: audioContentBase64 }
+      })
+    }
+  );
+
+  const payload = await response.json();
+  if (!response.ok || payload.error) {
+    const detail = payload?.error?.message || `Speech API HTTP ${response.status}`;
+    throw new Error(detail);
+  }
+
+  return payload;
+}
+
 app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: "audio 파일이 필요합니다." });
+      return res.status(400).json({ error: "audio file is required." });
+    }
+
+    if (!speechClient && !sttApiKey) {
+      return res.status(500).json({
+        error: "Google STT is not configured.",
+        detail:
+          "Set GOOGLE_CREDENTIALS_JSON (or GOOGLE_APPLICATION_CREDENTIALS) or GOOGLE_STT_API_KEY."
+      });
     }
 
     const languageCode = req.body.languageCode || "ko-KR";
     const encoding = inferEncoding(req.file.mimetype);
 
-    const request = {
-      audio: { content: req.file.buffer.toString("base64") },
-      config: {
-        encoding,
-        languageCode,
-        enableAutomaticPunctuation: true,
-        model: "latest_long"
-      }
+    const config = {
+      encoding,
+      languageCode,
+      enableAutomaticPunctuation: true,
+      model: "latest_long"
     };
 
-    const [response] = await speechClient.recognize(request);
+    const audioContentBase64 = req.file.buffer.toString("base64");
+
+    const response = speechClient
+      ? (await speechClient.recognize({ audio: { content: audioContentBase64 }, config }))[0]
+      : await transcribeWithApiKey(audioContentBase64, config);
+
     const transcript = (response.results || [])
       .map((r) => r.alternatives?.[0]?.transcript || "")
       .join(" ")
@@ -78,13 +129,12 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
 
     return res.json({
       transcript,
-      confidence:
-        response.results?.[0]?.alternatives?.[0]?.confidence ?? null
+      confidence: response.results?.[0]?.alternatives?.[0]?.confidence ?? null
     });
   } catch (error) {
     console.error("Transcribe error:", error);
     return res.status(500).json({
-      error: "음성 전사 중 오류가 발생했습니다.",
+      error: "Failed to transcribe audio.",
       detail: error.message
     });
   }
@@ -94,28 +144,29 @@ app.post("/api/meeting-notes", async (req, res) => {
   try {
     if (!genAI) {
       return res.status(500).json({
-        error: "GEMINI_API_KEY가 설정되지 않았습니다."
+        error: "Gemini is not configured.",
+        detail: "Set GEMINI_API_KEY or GOOGLE_API_KEY."
       });
     }
 
     const { transcript } = req.body;
     if (!transcript || !transcript.trim()) {
-      return res.status(400).json({ error: "transcript가 필요합니다." });
+      return res.status(400).json({ error: "transcript is required." });
     }
 
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const prompt = `
-너는 회의 기록 비서다.
-아래 회의 전사 텍스트를 분석해 JSON만 출력해라.
-형식:
+You are a meeting assistant.
+Analyze the transcript below and return JSON only.
+Format:
 {
-  "summary": "3~5문장 요약",
-  "keyPoints": ["핵심 포인트 1", "핵심 포인트 2"],
-  "actionItems": [{"owner":"담당자", "task":"할 일", "due":"기한(없으면 미정)"}],
-  "risks": ["리스크 1"]
+  "summary": "3-5 sentence summary",
+  "keyPoints": ["Point 1", "Point 2"],
+  "actionItems": [{"owner":"owner", "task":"task", "due":"date or TBD"}],
+  "risks": ["risk 1"]
 }
 
-회의 전사:
+Transcript:
 ${transcript}
 `.trim();
 
@@ -136,7 +187,7 @@ ${transcript}
   } catch (error) {
     console.error("Meeting notes error:", error);
     return res.status(500).json({
-      error: "회의 요약 생성 중 오류가 발생했습니다.",
+      error: "Failed to generate meeting notes.",
       detail: error.message
     });
   }
