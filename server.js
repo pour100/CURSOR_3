@@ -64,6 +64,42 @@ function inferEncoding(mimetype) {
   return "ENCODING_UNSPECIFIED";
 }
 
+function normalizeMimeType(mimetype, encoding) {
+  if (mimetype && mimetype !== "audio/mp3") return mimetype;
+  if (encoding === "MP3") return "audio/mpeg";
+  if (encoding === "LINEAR16") return "audio/wav";
+  if (encoding === "WEBM_OPUS") return "audio/webm";
+  if (encoding === "OGG_OPUS") return "audio/ogg";
+  return "audio/webm";
+}
+
+function getLanguageProfile(languageCode = "ko-KR") {
+  if (languageCode.startsWith("ko")) {
+    return {
+      languageCode,
+      sttHints: ["회의", "안건", "결정", "일정", "담당", "다음 주"],
+      transcriptInstruction:
+        "Korean (Hangul only). Never translate to English or romaji.",
+      notesInstruction: "Korean"
+    };
+  }
+  if (languageCode.startsWith("ja")) {
+    return {
+      languageCode,
+      sttHints: ["会議", "議題", "決定", "担当", "来週"],
+      transcriptInstruction:
+        "Japanese. Use natural Japanese script (kanji/hiragana/katakana).",
+      notesInstruction: "Japanese"
+    };
+  }
+  return {
+    languageCode: "en-US",
+    sttHints: ["meeting", "agenda", "decision", "timeline", "owner", "next week"],
+    transcriptInstruction: "English.",
+    notesInstruction: "English"
+  };
+}
+
 function safeJsonParse(text) {
   if (!text) return null;
   const trimmed = text.trim();
@@ -151,10 +187,13 @@ async function transcribeWithGeminiFallback(audioContentBase64, mimeType, langua
     throw new Error("Gemini is not configured for fallback transcription.");
   }
 
+  const profile = getLanguageProfile(languageCode);
   const transcriptionPrompt = [
-    "You are a speech-to-text engine.",
-    "Return only the transcript text, without markdown or metadata.",
-    `Primary language code: ${languageCode}.`
+    "You are a highly accurate speech-to-text engine.",
+    "Transcribe what is spoken in the audio exactly.",
+    "Do not summarize. Do not translate.",
+    `Output language rule: ${profile.transcriptInstruction}`,
+    "Return plain transcript text only (no markdown, no labels)."
   ].join(" ");
 
   let lastError = null;
@@ -191,14 +230,20 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     }
 
     const languageCode = req.body.languageCode || "ko-KR";
+    const profile = getLanguageProfile(languageCode);
     const encoding = inferEncoding(req.file.mimetype);
+    const mimeType = normalizeMimeType(req.file.mimetype, encoding);
 
     const config = {
       encoding,
-      languageCode,
+      languageCode: profile.languageCode,
       enableAutomaticPunctuation: true,
-      model: "latest_long"
+      model: "latest_long",
+      speechContexts: [{ phrases: profile.sttHints }]
     };
+    if (encoding === "ENCODING_UNSPECIFIED") {
+      delete config.encoding;
+    }
 
     const audioContentBase64 = req.file.buffer.toString("base64");
     const canUseSpeech = !!speechClient || !!sttApiKey;
@@ -223,7 +268,7 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
         if (genAI && shouldFallbackToGemini(sttError)) {
           const fallback = await transcribeWithGeminiFallback(
             audioContentBase64,
-            req.file.mimetype,
+            mimeType,
             languageCode
           );
           return res.json({
@@ -240,7 +285,7 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     if (genAI) {
       const fallback = await transcribeWithGeminiFallback(
         audioContentBase64,
-        req.file.mimetype,
+        mimeType,
         languageCode
       );
       return res.json({
@@ -273,14 +318,18 @@ app.post("/api/meeting-notes", async (req, res) => {
       });
     }
 
-    const { transcript } = req.body;
+    const { transcript, languageCode = "ko-KR" } = req.body;
     if (!transcript || !transcript.trim()) {
       return res.status(400).json({ error: "transcript is required." });
     }
+    const profile = getLanguageProfile(languageCode);
 
     const prompt = `
 You are a meeting assistant.
 Analyze the transcript below and return JSON only.
+Keep JSON keys in English exactly as provided.
+Write all values in ${profile.notesInstruction}.
+Do not add any text outside JSON.
 Format:
 {
   "summary": "3-5 sentence summary",
@@ -297,7 +346,14 @@ ${transcript}
     const parsed = safeJsonParse(text);
 
     if (parsed) {
-      return res.json({ ...parsed, model: modelName });
+      return res.json({
+        summary: parsed.summary || "",
+        keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
+        actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+        risks: Array.isArray(parsed.risks) ? parsed.risks : [],
+        model: modelName,
+        languageCode: profile.languageCode
+      });
     }
 
     return res.json({
@@ -305,7 +361,8 @@ ${transcript}
       keyPoints: [],
       actionItems: [],
       risks: [],
-      model: modelName
+      model: modelName,
+      languageCode: profile.languageCode
     });
   } catch (error) {
     console.error("Meeting notes error:", error);
