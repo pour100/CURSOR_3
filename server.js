@@ -198,6 +198,45 @@ async function generateNotesTextWithFallback(prompt) {
   return generateTextWithModelFallback(prompt, geminiModelCandidates);
 }
 
+async function generateTranslationTextWithFallback(
+  prompt,
+  candidates = geminiTranslateModelCandidates
+) {
+  let lastError = null;
+
+  for (const modelName of candidates) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          temperature: 0.1,
+          topP: 0.9
+        }
+      });
+      const result = await model.generateContent(prompt);
+      return {
+        text: result.response.text(),
+        modelName
+      };
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message || "");
+      const isModelMismatch =
+        message.includes("is not found") ||
+        message.includes("is not supported") ||
+        message.includes("404");
+      if (!isModelMismatch) {
+        throw error;
+      }
+    }
+  }
+
+  throw (
+    lastError ||
+    new Error("No available Gemini translation model found for this API key.")
+  );
+}
+
 function shouldFallbackToGemini(sttError) {
   const msg = String(sttError?.message || "").toLowerCase();
   return (
@@ -426,27 +465,35 @@ app.post("/api/translate", async (req, res) => {
     const targetProfile = getLanguageProfile(targetLanguageCode);
 
     const prompt = fast
-      ? `Translate this into ${targetProfile.notesInstruction} only.
-Return translated text only.
-Do not include source-language words unless they are proper names, brands, or unavoidable technical terms.
-Do not add explanations.
-
-${text}`
-      : `
-You are a real-time interpreter.
-Translate the source sentence into ${targetProfile.notesInstruction}.
+      ? `
+You are a precise translator.
+Translate the exact content between <source></source> into ${targetProfile.notesInstruction}.
 Rules:
-- Keep meaning and tone.
-- Return only translated text.
-- Do not copy source-language words unless they are proper names, brands, or unavoidable technical terms.
-- If unsure, still provide the best natural translation in the target language only.
+- Keep all meaning, facts, named entities, numbers, and intent.
+- Do not invent or omit content.
+- Keep sentence order.
+- Output only translated text in ${targetProfile.notesInstruction}.
+- No explanations, no markdown, no labels.
 
 Source language hint: ${sourceProfile.languageCode}
-Text:
-${text}
+<source>${text}</source>
+`.trim()
+      : `
+You are a real-time interpreter.
+Translate the exact content between <source></source> into ${targetProfile.notesInstruction}.
+Rules:
+- Preserve all facts, names, numbers, requests, and decisions.
+- Do not add any information that is not in the source.
+- Do not omit important details.
+- Keep the same tone and sentence order as much as possible.
+- Output translated text only in ${targetProfile.notesInstruction}.
+- No explanations, no markdown, no labels.
+
+Source language hint: ${sourceProfile.languageCode}
+<source>${text}</source>
 `.trim();
 
-    const { text: translatedText, modelName } = await generateTextWithModelFallback(
+    const { text: translatedText, modelName } = await generateTranslationTextWithFallback(
       prompt,
       geminiTranslateModelCandidates
     );

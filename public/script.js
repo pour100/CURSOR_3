@@ -19,7 +19,6 @@ const appTitle = document.getElementById("appTitle");
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 const DEFAULT_MINUTES_TEXT = "No minutes generated yet.";
-const TRANSLATION_PLACEHOLDER = "...";
 const LANGUAGE_NAMES = {
   "ko-KR": "Korean",
   "en-US": "English",
@@ -220,11 +219,8 @@ function renderTranscriptBoxes() {
   if (isSameLanguage(sourceLanguage, targetLanguage)) {
     interpretationTranscript.value = sourceText;
   } else {
-    const translatedFinalSegments = finalInterpretationSegments.filter(
-      (segment) => segment && segment !== TRANSLATION_PLACEHOLDER
-    );
     interpretationTranscript.value = composeTranscript(
-      translatedFinalSegments,
+      finalInterpretationSegments,
       interimInterpretationSegment
     );
   }
@@ -336,7 +332,7 @@ function queueFinalInterpretation(segment, runId) {
     return;
   }
 
-  const segmentIndex = finalInterpretationSegments.push(TRANSLATION_PLACEHOLDER) - 1;
+  const segmentIndex = finalInterpretationSegments.push(segment) - 1;
 
   finalTranslationQueue = finalTranslationQueue
     .catch(() => {})
