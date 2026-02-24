@@ -65,14 +65,9 @@ function isSameLanguage(sourceCode, targetCode) {
 
 function fitTitleToSingleLine() {
   if (!appTitle) return;
-  let fontSize = window.innerWidth < 860 ? 34 : 68;
+  const fontSize = window.innerWidth < 860 ? 30 : 64;
   appTitle.style.fontSize = `${fontSize}px`;
   appTitle.style.whiteSpace = "nowrap";
-
-  while (fontSize > 11 && appTitle.scrollWidth > appTitle.clientWidth) {
-    fontSize -= 1;
-    appTitle.style.fontSize = `${fontSize}px`;
-  }
 }
 
 function normalizeSegment(text) {
@@ -99,7 +94,7 @@ function shouldAppendFinalMeetingSegment(segment) {
 function ensureSentenceEnding(text) {
   const value = String(text || "").trim();
   if (!value) return "";
-  if (/[.!?。！？]$/.test(value)) return value;
+  if (/[.!?]$/.test(value)) return value;
   return `${value}.`;
 }
 
@@ -136,6 +131,51 @@ function isTranslationLikelyInvalid(translatedText, targetLanguageCode, sourceTe
 
 function updateStatus(message) {
   statusText.textContent = message;
+}
+
+function playTapFeedback() {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+
+  try {
+    const context = playTapFeedback._ctx || new AudioCtx();
+    playTapFeedback._ctx = context;
+    if (context.state === "suspended") {
+      context.resume();
+    }
+
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gainNode = context.createGain();
+
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(920, now);
+    oscillator.frequency.exponentialRampToValueAtTime(700, now + 0.06);
+
+    gainNode.gain.setValueAtTime(0.0001, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.06, now + 0.008);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.075);
+  } catch (_error) {
+    // Ignore feedback errors in unsupported environments.
+  }
+}
+
+function installTapFeedback() {
+  const interactiveNodes = document.querySelectorAll("button, select");
+  interactiveNodes.forEach((node) => {
+    node.addEventListener(
+      "pointerdown",
+      () => {
+        playTapFeedback();
+      },
+      { passive: true }
+    );
+  });
 }
 
 function updateStartButtonState() {
@@ -616,29 +656,21 @@ async function retranslateAllFinalSegments() {
 function buildQuickMinutes(transcript) {
   const compact = String(transcript || "").replace(/\s+/g, " ").trim();
   const sentences = compact
-    .split(/(?<=[.!?。！？])\s+|\n+/)
+    .split(/\n+|(?<=[.!?])\s+/)
     .map((item) => item.trim())
     .filter(Boolean);
-
   const summary = sentences.slice(0, 10).join(" ").slice(0, 2200) || compact.slice(0, 2200);
-
   const keyPoints = sentences.slice(0, 6).map((item) => item.slice(0, 220));
-
-  const actionPattern =
-    /(\bwill\b|\bshould\b|\bneed to\b|\bmust\b|\baction\b|\btodo\b|담당|해야|하기로|결정|일정|조치)/i;
-  const riskPattern =
-    /(\brisk\b|\bissue\b|\bblocker\b|\bdelay\b|\bconcern\b|\bproblem\b|리스크|문제|이슈|지연|우려)/i;
-
+  const actionPattern = /(\bwill\b|\bshould\b|\bneed to\b|\bmust\b|\baction\b|\btodo\b)/i;
+  const riskPattern = /(\brisk\b|\bissue\b|\bblocker\b|\bdelay\b|\bconcern\b|\bproblem\b)/i;
   const actionItems = sentences
     .filter((item) => actionPattern.test(item))
     .slice(0, 6)
     .map((task) => ({ owner: "TBD", task: task.slice(0, 220), due: "TBD" }));
-
   const risks = sentences
     .filter((item) => riskPattern.test(item))
     .slice(0, 6)
     .map((item) => item.slice(0, 220));
-
   return {
     summary: summary || "None",
     keyPoints,
@@ -646,7 +678,6 @@ function buildQuickMinutes(transcript) {
     risks
   };
 }
-
 function normalizeNotesResponse(payload) {
   const summary = payload.summary || "";
   const keyPoints = Array.isArray(payload.keyPoints) ? payload.keyPoints : [];
@@ -687,11 +718,10 @@ function renderMinutesHtml(minutesData) {
 
 function renderMinutesText(minutesData) {
   const lines = [];
-  lines.push("● Summary");
+  lines.push("* Summary");
   lines.push(minutesData.summary || "None");
   lines.push("");
-
-  lines.push("● Key Points");
+  lines.push("* Key Points");
   if (minutesData.keyPoints.length > 0) {
     minutesData.keyPoints.forEach((item, index) => {
       lines.push(`${index + 1}. ${item}`);
@@ -700,8 +730,7 @@ function renderMinutesText(minutesData) {
     lines.push("None");
   }
   lines.push("");
-
-  lines.push("● Action Items");
+  lines.push("* Action Items");
   if (minutesData.actionItems.length > 0) {
     minutesData.actionItems.forEach((item, index) => {
       const owner = item.owner || "TBD";
@@ -713,8 +742,7 @@ function renderMinutesText(minutesData) {
     lines.push("None");
   }
   lines.push("");
-
-  lines.push("● Risks");
+  lines.push("* Risks");
   if (minutesData.risks.length > 0) {
     minutesData.risks.forEach((item, index) => {
       lines.push(`${index + 1}. ${item}`);
@@ -722,10 +750,8 @@ function renderMinutesText(minutesData) {
   } else {
     lines.push("None");
   }
-
   return lines.join("\n");
 }
-
 async function buildPdfBlobFromText(text) {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
@@ -819,38 +845,60 @@ async function buildPdfBlobFromHtml(htmlContent) {
 }
 
 async function savePdfBlob(blob, filename) {
+  let lastError = null;
   if (window.showSaveFilePicker) {
-    const handle = await window.showSaveFilePicker({
-      suggestedName: filename,
-      types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }]
-    });
-    const writable = await handle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-    return "picker";
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return "picker";
+    } catch (error) {
+      lastError = error;
+    }
   }
-
   const file = new File([blob], filename, { type: "application/pdf" });
   if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
-    await navigator.share({
-      files: [file],
-      title: "Meeting Minutes",
-      text: "Save the generated minutes PDF."
-    });
-    return "share";
+    try {
+      await navigator.share({
+        files: [file],
+        title: "Meeting Minutes",
+        text: "Save the generated minutes PDF."
+      });
+      return "share";
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return "share-cancelled";
+      }
+      lastError = error;
+    }
   }
-
-  const fileUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = fileUrl;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(fileUrl), 3000);
-  return "download";
+  try {
+    const fileUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = fileUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(fileUrl), 3000);
+    return "download";
+  } catch (error) {
+    lastError = error;
+  }
+  try {
+    const fileUrl = URL.createObjectURL(blob);
+    window.open(fileUrl, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(fileUrl), 10000);
+    return "open";
+  } catch (error) {
+    lastError = error;
+  }
+  throw lastError || new Error("Unable to save PDF in this browser.");
 }
-
 async function generateMinutes() {
   const transcript = meetingTranscript.value.trim();
   if (!transcript) {
@@ -926,6 +974,10 @@ async function downloadMinutesPdf() {
       updateStatus("PDF saved with selected path.");
     } else if (method === "share") {
       updateStatus("Share sheet opened. Choose where to save the PDF.");
+    } else if (method === "share-cancelled") {
+      updateStatus("Share was canceled.");
+    } else if (method === "open") {
+      updateStatus("PDF opened in a new tab.");
     } else {
       updateStatus("PDF download started.");
     }
@@ -987,6 +1039,7 @@ window.addEventListener("resize", () => {
   resetTranscripts();
   resetMinutesOutput();
   updateStartButtonState();
+  installTapFeedback();
   updateStatus("Ready to start.");
   fitTitleToSingleLine();
 })();
