@@ -1,151 +1,121 @@
-const recordBtn = document.getElementById("recordBtn");
+const startMeetingBtn = document.getElementById("startMeetingBtn");
+const startMeetingLabel = document.getElementById("startMeetingLabel");
+const meetingTimer = document.getElementById("meetingTimer");
 const refreshBtn = document.getElementById("refreshBtn");
-const recordTimer = document.getElementById("recordTimer");
-const notesBtn = document.getElementById("notesBtn");
-const pdfBtn = document.getElementById("pdfBtn");
-const notesOutput = document.getElementById("notesOutput");
-const notesTitle = document.getElementById("notesTitle");
-const statusText = document.getElementById("status");
-const transcriptOriginal = document.getElementById("transcriptOriginal");
-const transcriptKorean = document.getElementById("transcriptKorean");
-const languageTabs = document.querySelectorAll(".lang-tab");
-const themeSwitch = document.getElementById("themeSwitch");
-const appTitle = document.getElementById("appTitle");
+const statusText = document.getElementById("statusText");
+
+const meetingLanguageSelect = document.getElementById("meetingLanguage");
+const interpretationLanguageSelect = document.getElementById("interpretationLanguage");
+const minuteLanguageSelect = document.getElementById("minuteLanguage");
+
+const meetingTranscript = document.getElementById("meetingTranscript");
+const interpretationTranscript = document.getElementById("interpretationTranscript");
+
+const generateMinutesBtn = document.getElementById("generateMinutesBtn");
+const downloadPdfBtn = document.getElementById("downloadPdfBtn");
+const minutesOutput = document.getElementById("minutesOutput");
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-const L10N = {
-  "ko-KR": {
-    step3: "Step 3. 회의 요약 결과",
-    summary: "요약",
-    keyPoints: "핵심 포인트",
-    actionItems: "액션 아이템",
-    risks: "리스크",
-    none: "없음",
-    unknown: "미정",
-    empty: "내용 없음",
-    due: "기한",
-    noResult: "아직 생성된 결과가 없습니다.",
-    recording: "실시간 전사/통역 진행 중...",
-    stopped: "전사 종료",
-    modeSelected: "모드 선택",
-    unsupported: "이 브라우저는 실시간 음성 인식을 지원하지 않습니다.",
-    startFail: "녹음 시작에 실패했습니다. 마이크 권한을 확인하세요.",
-    noteBuilding: "회의 요약 생성 중...",
-    noteDone: "회의 요약 완료",
-    noteFail: "회의 요약 실패",
-    noTranscript: "먼저 전사를 진행해주세요.",
-    pdfMaking: "PDF 생성 중...",
-    pdfDone: "PDF 저장 완료",
-    pdfFail: "PDF 생성 실패",
-    noPdfData: "저장할 회의 요약이 없습니다.",
-    refreshDone: "화면이 초기화되었습니다.",
-    wakeLockFail: "화면 꺼짐 방지 기능을 사용할 수 없습니다."
-  },
-  "en-US": {
-    step3: "Step 3. Meeting Summary",
-    summary: "Summary",
-    keyPoints: "Key Points",
-    actionItems: "Action Items",
-    risks: "Risks",
-    none: "None",
-    unknown: "TBD",
-    empty: "No details",
-    due: "Due",
-    noResult: "No summary generated yet.",
-    recording: "Live transcription/interpretation in progress...",
-    stopped: "Transcription stopped",
-    modeSelected: "mode selected",
-    unsupported: "This browser does not support live speech recognition.",
-    startFail: "Failed to start recording. Check microphone permissions.",
-    noteBuilding: "Generating meeting summary...",
-    noteDone: "Meeting summary completed",
-    noteFail: "Meeting summary failed",
-    noTranscript: "Run transcription first.",
-    pdfMaking: "Generating PDF...",
-    pdfDone: "PDF saved",
-    pdfFail: "PDF generation failed",
-    noPdfData: "No meeting summary to download.",
-    refreshDone: "Screen has been reset.",
-    wakeLockFail: "Wake lock is not available on this browser."
-  },
-  "ja-JP": {
-    step3: "Step 3. 会議要約結果",
-    summary: "要約",
-    keyPoints: "主要ポイント",
-    actionItems: "アクション項目",
-    risks: "リスク",
-    none: "なし",
-    unknown: "未定",
-    empty: "内容なし",
-    due: "期限",
-    noResult: "まだ生成された結果がありません。",
-    recording: "リアルタイム文字起こし/通訳を実行中...",
-    stopped: "文字起こし終了",
-    modeSelected: "モードを選択",
-    unsupported: "このブラウザはリアルタイム音声認識に対応していません。",
-    startFail: "録音開始に失敗しました。マイク権限を確認してください。",
-    noteBuilding: "会議要約を生成中...",
-    noteDone: "会議要約が完了しました",
-    noteFail: "会議要約に失敗しました",
-    noTranscript: "先に文字起こしを実行してください。",
-    pdfMaking: "PDFを生成中...",
-    pdfDone: "PDFを保存しました",
-    pdfFail: "PDF生成に失敗しました",
-    noPdfData: "保存する会議要約がありません。",
-    refreshDone: "画面を初期化しました。",
-    wakeLockFail: "画面スリープ防止機能を使えません。"
-  },
-  "zh-CN": {
-    step3: "Step 3. 会议摘要结果",
-    summary: "摘要",
-    keyPoints: "关键要点",
-    actionItems: "行动项",
-    risks: "风险",
-    none: "无",
-    unknown: "待定",
-    empty: "无内容",
-    due: "截止时间",
-    noResult: "尚未生成结果。",
-    recording: "实时转写/同传进行中...",
-    stopped: "转写已停止",
-    modeSelected: "模式已选择",
-    unsupported: "当前浏览器不支持实时语音识别。",
-    startFail: "录音启动失败，请检查麦克风权限。",
-    noteBuilding: "正在生成会议摘要...",
-    noteDone: "会议摘要生成完成",
-    noteFail: "会议摘要生成失败",
-    noTranscript: "请先进行转写。",
-    pdfMaking: "正在生成 PDF...",
-    pdfDone: "PDF 已保存",
-    pdfFail: "PDF 生成失败",
-    noPdfData: "没有可下载的会议摘要。",
-    refreshDone: "画面已重置。",
-    wakeLockFail: "无法使用防休眠功能。"
-  }
+const DEFAULT_MINUTES_TEXT = "No minutes generated yet.";
+const LANGUAGE_NAMES = {
+  "ko-KR": "Korean",
+  "en-US": "English",
+  "zh-CN": "Chinese",
+  "ja-JP": "Japanese",
+  "es-ES": "Spanish"
 };
 
-let selectedLanguage = "ko-KR";
 let recognition = null;
 let keepListening = false;
 let isRecording = false;
 let wakeLock = null;
 
-let finalOriginalSegments = [];
-let finalKoreanSegments = [];
-let interimOriginal = "";
-let interimKorean = "";
-let interimTimer = null;
-let interimToken = 0;
-let interimTranslateController = null;
-const translateCache = new Map();
+let finalMeetingSegments = [];
+let finalInterpretationSegments = [];
+let interimMeetingSegment = "";
+let interimInterpretationSegment = "";
+let translationCache = new Map();
+
+let interimTranslateTimer = null;
+let interimTranslateToken = 0;
+let interimAbortController = null;
+let interpretationRunId = 0;
 
 let timerInterval = null;
 let elapsedMs = 0;
-let runningStartedAt = 0;
+let runningStartAt = 0;
 
-function t() {
-  return L10N[selectedLanguage] || L10N["en-US"];
+let latestMinutes = null;
+
+function languageName(code) {
+  return LANGUAGE_NAMES[code] || code || "Unknown";
+}
+
+function languageFamily(code) {
+  return String(code || "").split("-")[0];
+}
+
+function isSameLanguage(sourceCode, targetCode) {
+  return languageFamily(sourceCode) === languageFamily(targetCode);
+}
+
+function updateStatus(message) {
+  statusText.textContent = message;
+}
+
+function updateStartButtonState() {
+  if (isRecording) {
+    startMeetingBtn.classList.add("recording");
+    startMeetingLabel.textContent = "Stop Meeting";
+  } else {
+    startMeetingBtn.classList.remove("recording");
+    startMeetingLabel.textContent = "Start Meeting";
+  }
+}
+
+function setLanguageControlsDisabled(disabled) {
+  meetingLanguageSelect.disabled = disabled;
+  interpretationLanguageSelect.disabled = disabled;
+  minuteLanguageSelect.disabled = disabled;
+}
+
+function formatTime(milliseconds) {
+  const centiseconds = Math.floor(milliseconds / 10) % 100;
+  const seconds = Math.floor(milliseconds / 1000) % 60;
+  const minutes = Math.floor(milliseconds / 60000);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(
+    centiseconds
+  ).padStart(2, "0")}`;
+}
+
+function startTimer() {
+  if (timerInterval) return;
+  runningStartAt = performance.now();
+  timerInterval = setInterval(() => {
+    const total = elapsedMs + (performance.now() - runningStartAt);
+    meetingTimer.textContent = formatTime(total);
+  }, 10);
+}
+
+function stopTimer() {
+  if (!timerInterval) return;
+  elapsedMs += performance.now() - runningStartAt;
+  clearInterval(timerInterval);
+  timerInterval = null;
+  meetingTimer.textContent = formatTime(elapsedMs);
+}
+
+function resetTimer() {
+  stopTimer();
+  elapsedMs = 0;
+  runningStartAt = 0;
+  meetingTimer.textContent = "00:00.00";
+}
+
+function autoGrow(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.max(140, textarea.scrollHeight)}px`;
 }
 
 function escapeHtml(value = "") {
@@ -157,98 +127,52 @@ function escapeHtml(value = "") {
     .replace(/'/g, "&#039;");
 }
 
-function updateStatus(message) {
-  statusText.textContent = message;
-}
-
-function applyTheme(theme) {
-  const dark = theme === "dark";
-  document.body.setAttribute("data-theme", dark ? "dark" : "bright");
-  themeSwitch.setAttribute("aria-pressed", String(dark));
-  localStorage.setItem("meeting-theme", dark ? "dark" : "bright");
-}
-
-function fitTitleOneLine() {
-  if (!appTitle) return;
-  let size = window.innerWidth < 840 ? 34 : 64;
-  appTitle.style.fontSize = `${size}px`;
-  appTitle.style.whiteSpace = "nowrap";
-  while (size > 12 && appTitle.scrollWidth > appTitle.clientWidth) {
-    size -= 1;
-    appTitle.style.fontSize = `${size}px`;
-  }
-}
-
-function formatTime(ms) {
-  const centiseconds = Math.floor(ms / 10) % 100;
-  const seconds = Math.floor(ms / 1000) % 60;
-  const minutes = Math.floor(ms / 60000);
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(
-    centiseconds
-  ).padStart(2, "0")}`;
-}
-
-function startTimer() {
-  if (timerInterval) return;
-  runningStartedAt = performance.now();
-  timerInterval = setInterval(() => {
-    const live = elapsedMs + (performance.now() - runningStartedAt);
-    recordTimer.textContent = formatTime(live);
-  }, 10);
-}
-
-function stopTimer() {
-  if (!timerInterval) return;
-  elapsedMs += performance.now() - runningStartedAt;
-  clearInterval(timerInterval);
-  timerInterval = null;
-  recordTimer.textContent = formatTime(elapsedMs);
-}
-
-function resetTimer() {
-  stopTimer();
-  elapsedMs = 0;
-  runningStartedAt = 0;
-  recordTimer.textContent = "00:00.00";
-}
-
-function autoGrowTextarea(el) {
-  el.style.height = "auto";
-  el.style.height = `${Math.max(el.scrollHeight, 150)}px`;
-}
-
-function updateSectionLabels() {
-  const label = t().step3.replace(/^Step 3\.\s*/i, "");
-  notesTitle.innerHTML = `<span class="step-chip">Step 3</span> ${label}`;
-  if (!notesOutput.textContent.trim()) {
-    notesOutput.textContent = t().noResult;
-  }
+function composeTranscript(finalSegments, interimSegment) {
+  return [...finalSegments, interimSegment]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function renderTranscriptBoxes() {
-  const originalText = [finalOriginalSegments.join(" "), interimOriginal]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  transcriptOriginal.value = originalText;
+  const sourceLanguage = meetingLanguageSelect.value;
+  const targetLanguage = interpretationLanguageSelect.value;
 
-  if (selectedLanguage === "ko-KR") {
-    transcriptKorean.value = originalText;
+  const sourceText = composeTranscript(finalMeetingSegments, interimMeetingSegment);
+  meetingTranscript.value = sourceText;
+
+  if (isSameLanguage(sourceLanguage, targetLanguage)) {
+    interpretationTranscript.value = sourceText;
   } else {
-    const koreanText = [finalKoreanSegments.join(" "), interimKorean]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-    transcriptKorean.value = koreanText;
+    interpretationTranscript.value = composeTranscript(
+      finalInterpretationSegments,
+      interimInterpretationSegment
+    );
   }
 
-  autoGrowTextarea(transcriptOriginal);
-  autoGrowTextarea(transcriptKorean);
+  autoGrow(meetingTranscript);
+  autoGrow(interpretationTranscript);
 }
 
-async function requestKoreanTranslation(text, options = {}) {
-  const key = `${selectedLanguage}:${text}`;
-  if (translateCache.has(key)) return translateCache.get(key);
+function clearInterimTranslationWork() {
+  clearTimeout(interimTranslateTimer);
+  interimTranslateTimer = null;
+  interimTranslateToken += 1;
+  if (interimAbortController) {
+    interimAbortController.abort();
+    interimAbortController = null;
+  }
+}
+
+async function translateText(text, sourceLanguageCode, targetLanguageCode, options = {}) {
+  if (!text || !text.trim()) return "";
+  if (isSameLanguage(sourceLanguageCode, targetLanguageCode)) return text;
+
+  const cacheKey = `${sourceLanguageCode}|${targetLanguageCode}|${text}`;
+  if (translationCache.has(cacheKey)) {
+    return translationCache.get(cacheKey);
+  }
 
   const response = await fetch("/api/translate", {
     method: "POST",
@@ -256,164 +180,143 @@ async function requestKoreanTranslation(text, options = {}) {
     signal: options.signal,
     body: JSON.stringify({
       text,
-      sourceLanguageCode: selectedLanguage,
-      targetLanguageCode: "ko-KR",
+      sourceLanguageCode,
+      targetLanguageCode,
       fast: true
     })
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.detail || data.error || "translate failed");
 
-  const translated = data.translatedText || "";
-  translateCache.set(key, translated);
-  return translated;
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.detail || payload.error || "Translation failed");
+  }
+
+  const translatedText = payload.translatedText || "";
+  translationCache.set(cacheKey, translatedText);
+  return translatedText;
 }
 
-function queueFinalTranslation(segment) {
+function queueFinalInterpretation(segment, runId) {
+  const sourceLanguage = meetingLanguageSelect.value;
+  const targetLanguage = interpretationLanguageSelect.value;
+
   if (!segment) return;
-  if (selectedLanguage === "ko-KR") {
-    finalKoreanSegments.push(segment);
+  if (isSameLanguage(sourceLanguage, targetLanguage)) {
+    finalInterpretationSegments.push(segment);
     renderTranscriptBoxes();
     return;
   }
 
-  const index = finalKoreanSegments.push(interimKorean || segment) - 1;
-  requestKoreanTranslation(segment)
-    .then((translated) => {
-      finalKoreanSegments[index] = translated || segment;
+  const fallbackText = interimInterpretationSegment || segment;
+  const segmentIndex = finalInterpretationSegments.push(fallbackText) - 1;
+
+  translateText(segment, sourceLanguage, targetLanguage)
+    .then((translatedText) => {
+      if (runId !== interpretationRunId) return;
+      finalInterpretationSegments[segmentIndex] = translatedText || segment;
       renderTranscriptBoxes();
     })
     .catch(() => {
-      finalKoreanSegments[index] = segment;
+      if (runId !== interpretationRunId) return;
+      finalInterpretationSegments[segmentIndex] = segment;
       renderTranscriptBoxes();
     });
 }
 
-function scheduleInterimTranslation() {
-  if (selectedLanguage === "ko-KR") {
-    interimKorean = interimOriginal;
+function scheduleInterimInterpretation(runId) {
+  const sourceLanguage = meetingLanguageSelect.value;
+  const targetLanguage = interpretationLanguageSelect.value;
+
+  if (isSameLanguage(sourceLanguage, targetLanguage)) {
+    interimInterpretationSegment = interimMeetingSegment;
     renderTranscriptBoxes();
     return;
   }
 
-  clearTimeout(interimTimer);
-  const currentInterim = interimOriginal.trim();
-  if (!currentInterim) {
-    interimKorean = "";
+  clearInterimTranslationWork();
+
+  const text = interimMeetingSegment.trim();
+  if (!text) {
+    interimInterpretationSegment = "";
     renderTranscriptBoxes();
     return;
   }
 
-  const token = ++interimToken;
-  interimTimer = setTimeout(async () => {
-    if (interimTranslateController) interimTranslateController.abort();
-    interimTranslateController = new AbortController();
+  const token = ++interimTranslateToken;
+  interimTranslateTimer = setTimeout(async () => {
+    if (interimAbortController) interimAbortController.abort();
+    interimAbortController = new AbortController();
 
     try {
-      const translated = await requestKoreanTranslation(currentInterim, {
-        signal: interimTranslateController.signal
+      const translatedText = await translateText(text, sourceLanguage, targetLanguage, {
+        signal: interimAbortController.signal
       });
-      if (token === interimToken) {
-        interimKorean = translated || currentInterim;
-        renderTranscriptBoxes();
-      }
+      if (token !== interimTranslateToken || runId !== interpretationRunId) return;
+      interimInterpretationSegment = translatedText || text;
+      renderTranscriptBoxes();
     } catch (_error) {
-      if (token === interimToken) {
-        interimKorean = currentInterim;
-        renderTranscriptBoxes();
-      }
+      if (token !== interimTranslateToken || runId !== interpretationRunId) return;
+      interimInterpretationSegment = text;
+      renderTranscriptBoxes();
     }
-  }, 50);
+  }, 35);
 }
 
 function setupRecognition() {
   if (!SpeechRecognition) return null;
+
   const instance = new SpeechRecognition();
   instance.continuous = true;
   instance.interimResults = true;
-  instance.lang = selectedLanguage;
   instance.maxAlternatives = 1;
+  instance.lang = meetingLanguageSelect.value;
 
   instance.onresult = (event) => {
-    let nextInterim = "";
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      const result = event.results[i];
+    const runId = interpretationRunId;
+    let interimText = "";
+
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const result = event.results[index];
       const text = (result[0]?.transcript || "").trim();
       if (!text) continue;
+
       if (result.isFinal) {
-        finalOriginalSegments.push(text);
-        queueFinalTranslation(text);
+        finalMeetingSegments.push(text);
+        queueFinalInterpretation(text, runId);
       } else {
-        nextInterim += `${text} `;
+        interimText += `${text} `;
       }
     }
-    interimOriginal = nextInterim.trim();
+
+    interimMeetingSegment = interimText.trim();
     renderTranscriptBoxes();
-    scheduleInterimTranslation();
+    scheduleInterimInterpretation(runId);
   };
 
   instance.onerror = (event) => {
-    updateStatus(`Error: ${event.error}`);
+    if (event.error === "aborted" || event.error === "no-speech") return;
+    updateStatus(`Recognition error: ${event.error}`);
   };
 
   instance.onend = () => {
-    if (keepListening) {
-      try {
-        instance.start();
-      } catch (_error) {
-        stopRecording();
-      }
+    if (!keepListening) return;
+    try {
+      instance.lang = meetingLanguageSelect.value;
+      instance.start();
+    } catch (_error) {
+      setTimeout(() => {
+        if (!keepListening) return;
+        try {
+          instance.lang = meetingLanguageSelect.value;
+          instance.start();
+        } catch (_error2) {
+          stopRecording("Recorder stopped unexpectedly.");
+        }
+      }, 250);
     }
   };
 
   return instance;
-}
-
-function renderNotesHtml(data) {
-  const tr = t();
-  const summary = escapeHtml(data.summary || tr.none);
-  const keyPoints =
-    Array.isArray(data.keyPoints) && data.keyPoints.length > 0
-      ? data.keyPoints.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join("<br>")
-      : escapeHtml(tr.none);
-  const actionItems =
-    Array.isArray(data.actionItems) && data.actionItems.length > 0
-      ? data.actionItems
-          .map((item, idx) => {
-            const owner = escapeHtml(item.owner || tr.unknown);
-            const task = escapeHtml(item.task || tr.empty);
-            const due = escapeHtml(item.due || tr.unknown);
-            return `${idx + 1}. [${owner}] ${task} (${escapeHtml(tr.due)}: ${due})`;
-          })
-          .join("<br>")
-      : escapeHtml(tr.none);
-  const risks =
-    Array.isArray(data.risks) && data.risks.length > 0
-      ? data.risks.map((item, idx) => `${idx + 1}. ${escapeHtml(item)}`).join("<br>")
-      : escapeHtml(tr.none);
-
-  return [
-    `<strong>${escapeHtml(tr.summary)}</strong><br>${summary}`,
-    `<strong>${escapeHtml(tr.keyPoints)}</strong><br>${keyPoints}`,
-    `<strong>${escapeHtml(tr.actionItems)}</strong><br>${actionItems}`,
-    `<strong>${escapeHtml(tr.risks)}</strong><br>${risks}`
-  ].join("<br><br>");
-}
-
-function resetTranscriptAndNotes() {
-  finalOriginalSegments = [];
-  finalKoreanSegments = [];
-  interimOriginal = "";
-  interimKorean = "";
-  interimToken += 1;
-  clearTimeout(interimTimer);
-  if (interimTranslateController) interimTranslateController.abort();
-
-  transcriptOriginal.value = "";
-  transcriptKorean.value = "";
-  autoGrowTextarea(transcriptOriginal);
-  autoGrowTextarea(transcriptKorean);
-  notesOutput.textContent = t().noResult;
 }
 
 async function requestWakeLock() {
@@ -425,101 +328,318 @@ async function requestWakeLock() {
       });
     }
   } catch (_error) {
-    updateStatus(t().wakeLockFail);
+    updateStatus("Wake lock is not supported in this browser.");
   }
 }
 
 async function releaseWakeLock() {
-  if (wakeLock) {
-    await wakeLock.release();
+  try {
+    if (wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (_error) {
     wakeLock = null;
   }
 }
 
-function stopRecording() {
+function stopRecording(message = "Meeting paused.") {
   keepListening = false;
   isRecording = false;
+
   stopTimer();
-  recordBtn.classList.remove("recording");
-  if (recognition) recognition.stop();
+  clearInterimTranslationWork();
+
+  interimMeetingSegment = "";
+  interimInterpretationSegment = "";
+  renderTranscriptBoxes();
+
+  setLanguageControlsDisabled(false);
+  updateStartButtonState();
   releaseWakeLock();
-  updateStatus(t().stopped);
+
+  if (recognition) {
+    try {
+      recognition.stop();
+    } catch (_error) {
+      // no-op
+    }
+  }
+
+  if (message) updateStatus(message);
 }
 
 function startRecording() {
   if (!SpeechRecognition) {
-    updateStatus(t().unsupported);
+    updateStatus("This browser does not support real-time speech recognition.");
     return;
   }
 
   if (!recognition) recognition = setupRecognition();
-  recognition.lang = selectedLanguage;
+  if (!recognition) {
+    updateStatus("Speech recognition is not available.");
+    return;
+  }
+
+  interpretationRunId += 1;
+  recognition.lang = meetingLanguageSelect.value;
   keepListening = true;
   isRecording = true;
-  recordBtn.classList.add("recording");
+
+  setLanguageControlsDisabled(true);
+  updateStartButtonState();
   startTimer();
-  updateStatus(t().recording);
   requestWakeLock();
+
+  updateStatus(
+    `Listening in ${languageName(meetingLanguageSelect.value)}. Interpreting to ${languageName(
+      interpretationLanguageSelect.value
+    )}.`
+  );
 
   try {
     recognition.start();
   } catch (_error) {
-    stopRecording();
-    updateStatus(t().startFail);
+    stopRecording("");
+    updateStatus("Microphone start failed. Please allow microphone access.");
   }
 }
 
-function toggleRecording() {
-  if (isRecording) stopRecording();
-  else startRecording();
+function resetMinutesOutput() {
+  latestMinutes = null;
+  minutesOutput.textContent = DEFAULT_MINUTES_TEXT;
 }
 
-async function buildPdfBlob(contentHtml) {
-  const renderNode = document.createElement("div");
-  renderNode.style.position = "fixed";
-  renderNode.style.left = "-10000px";
-  renderNode.style.top = "0";
-  renderNode.style.width = "800px";
-  renderNode.style.background = "#fff";
-  renderNode.style.color = "#111";
-  renderNode.style.padding = "24px";
-  renderNode.style.fontFamily = "'Noto Sans KR', sans-serif";
-  renderNode.style.fontSize = "14px";
-  renderNode.style.lineHeight = "1.6";
-  renderNode.innerHTML = contentHtml;
-  document.body.appendChild(renderNode);
+function resetTranscripts() {
+  interpretationRunId += 1;
+  clearInterimTranslationWork();
+
+  finalMeetingSegments = [];
+  finalInterpretationSegments = [];
+  interimMeetingSegment = "";
+  interimInterpretationSegment = "";
+
+  meetingTranscript.value = "";
+  interpretationTranscript.value = "";
+  autoGrow(meetingTranscript);
+  autoGrow(interpretationTranscript);
+}
+
+function hardReset() {
+  if (isRecording) stopRecording("");
+  translationCache = new Map();
+  resetTimer();
+  resetTranscripts();
+  resetMinutesOutput();
+  setLanguageControlsDisabled(false);
+  updateStartButtonState();
+  updateStatus("Screen reset.");
+}
+
+async function retranslateAllFinalSegments() {
+  const sourceLanguage = meetingLanguageSelect.value;
+  const targetLanguage = interpretationLanguageSelect.value;
+  const runId = ++interpretationRunId;
+
+  clearInterimTranslationWork();
+  interimInterpretationSegment = "";
+  finalInterpretationSegments = [];
+  renderTranscriptBoxes();
+
+  if (finalMeetingSegments.length === 0) return;
+  if (isSameLanguage(sourceLanguage, targetLanguage)) {
+    finalInterpretationSegments = [...finalMeetingSegments];
+    renderTranscriptBoxes();
+    return;
+  }
+
+  for (const segment of finalMeetingSegments) {
+    let translated = segment;
+    try {
+      translated = await translateText(segment, sourceLanguage, targetLanguage);
+    } catch (_error) {
+      translated = segment;
+    }
+
+    if (runId !== interpretationRunId) return;
+    finalInterpretationSegments.push(translated || segment);
+    renderTranscriptBoxes();
+  }
+}
+
+function normalizeNotesResponse(payload) {
+  const summary = payload.summary || "";
+  const keyPoints = Array.isArray(payload.keyPoints) ? payload.keyPoints : [];
+  const actionItems = Array.isArray(payload.actionItems) ? payload.actionItems : [];
+  const risks = Array.isArray(payload.risks) ? payload.risks : [];
+  return { summary, keyPoints, actionItems, risks };
+}
+
+function renderMinutesHtml(minutesData) {
+  const summary = escapeHtml(minutesData.summary || "None");
+  const keyPoints =
+    minutesData.keyPoints.length > 0
+      ? minutesData.keyPoints.map((item, i) => `${i + 1}. ${escapeHtml(item)}`).join("<br>")
+      : "None";
+  const actionItems =
+    minutesData.actionItems.length > 0
+      ? minutesData.actionItems
+          .map((item, i) => {
+            const owner = escapeHtml(item.owner || "TBD");
+            const task = escapeHtml(item.task || "No details");
+            const due = escapeHtml(item.due || "TBD");
+            return `${i + 1}. [${owner}] ${task} (Due: ${due})`;
+          })
+          .join("<br>")
+      : "None";
+  const risks =
+    minutesData.risks.length > 0
+      ? minutesData.risks.map((item, i) => `${i + 1}. ${escapeHtml(item)}`).join("<br>")
+      : "None";
+
+  return [
+    `<strong>Summary</strong><br>${summary}`,
+    `<strong>Key Points</strong><br>${keyPoints}`,
+    `<strong>Action Items</strong><br>${actionItems}`,
+    `<strong>Risks</strong><br>${risks}`
+  ].join("<br><br>");
+}
+
+function renderMinutesText(minutesData) {
+  const lines = [];
+  lines.push("Summary");
+  lines.push(minutesData.summary || "None");
+  lines.push("");
+
+  lines.push("Key Points");
+  if (minutesData.keyPoints.length > 0) {
+    minutesData.keyPoints.forEach((item, index) => {
+      lines.push(`${index + 1}. ${item}`);
+    });
+  } else {
+    lines.push("None");
+  }
+  lines.push("");
+
+  lines.push("Action Items");
+  if (minutesData.actionItems.length > 0) {
+    minutesData.actionItems.forEach((item, index) => {
+      const owner = item.owner || "TBD";
+      const task = item.task || "No details";
+      const due = item.due || "TBD";
+      lines.push(`${index + 1}. [${owner}] ${task} (Due: ${due})`);
+    });
+  } else {
+    lines.push("None");
+  }
+  lines.push("");
+
+  lines.push("Risks");
+  if (minutesData.risks.length > 0) {
+    minutesData.risks.forEach((item, index) => {
+      lines.push(`${index + 1}. ${item}`);
+    });
+  } else {
+    lines.push("None");
+  }
+
+  return lines.join("\n");
+}
+
+async function buildPdfBlobFromText(text) {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+
+  const margin = 40;
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const lineHeight = 18;
+  const usableWidth = pageWidth - margin * 2;
+
+  let y = margin;
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(18);
+  pdf.text("Meeting Minutes", margin, y);
+  y += 26;
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(12);
+  pdf.text(`Minute Language: ${languageName(minuteLanguageSelect.value)}`, margin, y);
+  y += 24;
+
+  const lines = pdf.splitTextToSize(text, usableWidth);
+  for (const line of lines) {
+    if (y > pageHeight - margin) {
+      pdf.addPage();
+      y = margin;
+    }
+    pdf.text(line, margin, y);
+    y += lineHeight;
+  }
+
+  return pdf.output("blob");
+}
+
+async function buildPdfBlobFromHtml(htmlContent) {
+  if (!window.html2canvas) {
+    return buildPdfBlobFromText(renderMinutesText(latestMinutes));
+  }
+
+  const captureNode = document.createElement("section");
+  captureNode.style.position = "fixed";
+  captureNode.style.left = "-10000px";
+  captureNode.style.top = "0";
+  captureNode.style.width = "780px";
+  captureNode.style.padding = "28px";
+  captureNode.style.background = "#ffffff";
+  captureNode.style.color = "#111111";
+  captureNode.style.fontFamily = "'Manrope', 'Noto Sans', sans-serif";
+  captureNode.style.fontSize = "14px";
+  captureNode.style.lineHeight = "1.6";
+  captureNode.innerHTML = `
+    <h1 style="margin:0 0 8px;font-size:24px;line-height:1.2;">Meeting Minutes</h1>
+    <p style="margin:0 0 18px;color:#333;">Minute Language: ${escapeHtml(
+      languageName(minuteLanguageSelect.value)
+    )}</p>
+    ${htmlContent}
+  `;
+
+  document.body.appendChild(captureNode);
 
   try {
-    const canvas = await window.html2canvas(renderNode, {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const canvas = await window.html2canvas(captureNode, {
       scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff"
+      backgroundColor: "#ffffff",
+      useCORS: true
     });
+
     const imgData = canvas.toDataURL("image/png");
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const margin = 24;
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 24;
-    const imgWidth = pageWidth - margin * 2;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imageWidth = pageWidth - margin * 2;
+    const imageHeight = (canvas.height * imageWidth) / canvas.width;
 
-    let position = 0;
-    let remaining = imgHeight;
-    pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight);
-    remaining -= pageHeight - margin * 2;
-    position -= pageHeight - margin * 2;
+    let offsetY = 0;
+    let remainingHeight = imageHeight;
 
-    while (remaining > 0) {
+    pdf.addImage(imgData, "PNG", margin, margin, imageWidth, imageHeight);
+    remainingHeight -= pageHeight - margin * 2;
+    offsetY -= pageHeight - margin * 2;
+
+    while (remainingHeight > 0) {
       pdf.addPage();
-      pdf.addImage(imgData, "PNG", margin, margin + position, imgWidth, imgHeight);
-      remaining -= pageHeight - margin * 2;
-      position -= pageHeight - margin * 2;
+      pdf.addImage(imgData, "PNG", margin, margin + offsetY, imageWidth, imageHeight);
+      remainingHeight -= pageHeight - margin * 2;
+      offsetY -= pageHeight - margin * 2;
     }
 
     return pdf.output("blob");
   } finally {
-    renderNode.remove();
+    captureNode.remove();
   }
 }
 
@@ -527,103 +647,139 @@ async function savePdfBlob(blob, filename) {
   if (window.showSaveFilePicker) {
     const handle = await window.showSaveFilePicker({
       suggestedName: filename,
-      types: [{ description: "PDF files", accept: { "application/pdf": [".pdf"] } }]
+      types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }]
     });
     const writable = await handle.createWritable();
     await writable.write(blob);
     await writable.close();
-    return;
+    return "picker";
   }
 
   const file = new File([blob], filename, { type: "application/pdf" });
   if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
-    await navigator.share({ files: [file], title: filename });
-    return;
+    await navigator.share({
+      files: [file],
+      title: "Meeting Minutes",
+      text: "Save the generated minutes PDF."
+    });
+    return "share";
   }
 
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  const fileUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = fileUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(fileUrl), 3000);
+  return "download";
 }
 
-languageTabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    if (isRecording) return;
-    languageTabs.forEach((btn) => btn.classList.remove("active"));
-    tab.classList.add("active");
-    selectedLanguage = tab.dataset.lang || "ko-KR";
-    if (recognition) recognition.lang = selectedLanguage;
-    updateSectionLabels();
-    updateStatus(`${tab.textContent.trim()} ${t().modeSelected}`);
-  });
-});
-
-recordBtn.addEventListener("click", toggleRecording);
-
-refreshBtn.addEventListener("click", () => {
-  if (isRecording) stopRecording();
-  resetTimer();
-  resetTranscriptAndNotes();
-  updateSectionLabels();
-  updateStatus(t().refreshDone);
-});
-
-notesBtn.addEventListener("click", async () => {
-  const transcript = transcriptOriginal.value.trim();
+async function generateMinutes() {
+  const transcript = meetingTranscript.value.trim();
   if (!transcript) {
-    updateStatus(t().noTranscript);
+    updateStatus("No transcription text available yet.");
     return;
   }
 
   try {
-    notesBtn.disabled = true;
-    updateStatus(t().noteBuilding);
+    generateMinutesBtn.disabled = true;
+    updateStatus(`Generating minutes in ${languageName(minuteLanguageSelect.value)}...`);
+
     const response = await fetch("/api/meeting-notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript, languageCode: selectedLanguage })
+      body: JSON.stringify({
+        transcript,
+        languageCode: minuteLanguageSelect.value
+      })
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || data.error || t().noteFail);
-    notesOutput.innerHTML = renderNotesHtml(data);
-    updateStatus(t().noteDone);
-  } catch (error) {
-    updateStatus(`${t().noteFail}: ${error.message}`);
-  } finally {
-    notesBtn.disabled = false;
-  }
-});
 
-pdfBtn.addEventListener("click", async () => {
-  const raw = notesOutput.textContent.trim();
-  if (!raw || raw === t().noResult) {
-    updateStatus(t().noPdfData);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.detail || payload.error || "Failed to generate minutes");
+    }
+
+    latestMinutes = normalizeNotesResponse(payload);
+    minutesOutput.innerHTML = renderMinutesHtml(latestMinutes);
+    updateStatus("Minutes generated successfully.");
+  } catch (error) {
+    updateStatus(`Minutes generation failed: ${error.message}`);
+  } finally {
+    generateMinutesBtn.disabled = false;
+  }
+}
+
+async function downloadMinutesPdf() {
+  if (!latestMinutes) {
+    updateStatus("No minutes available to download.");
     return;
   }
 
   try {
-    pdfBtn.disabled = true;
-    updateStatus(t().pdfMaking);
-    const blob = await buildPdfBlob(notesOutput.innerHTML);
-    if (!blob || blob.size < 128) throw new Error("empty pdf");
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    await savePdfBlob(blob, `meeting-minutes-${stamp}.pdf`);
-    updateStatus(t().pdfDone);
+    downloadPdfBtn.disabled = true;
+    updateStatus("Building PDF...");
+
+    const htmlContent = minutesOutput.innerHTML;
+    let pdfBlob = await buildPdfBlobFromHtml(htmlContent);
+    if (!pdfBlob || pdfBlob.size < 256) {
+      pdfBlob = await buildPdfBlobFromText(renderMinutesText(latestMinutes));
+    }
+    if (!pdfBlob || pdfBlob.size < 128) {
+      throw new Error("Generated PDF is empty");
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `meeting-minutes-${timestamp}.pdf`;
+    const method = await savePdfBlob(pdfBlob, filename);
+
+    if (method === "picker") {
+      updateStatus("PDF saved with selected path.");
+    } else if (method === "share") {
+      updateStatus("Share sheet opened. Choose where to save the PDF.");
+    } else {
+      updateStatus("PDF download started.");
+    }
   } catch (error) {
-    updateStatus(`${t().pdfFail}: ${error.message}`);
+    updateStatus(`PDF download failed: ${error.message}`);
   } finally {
-    pdfBtn.disabled = false;
+    downloadPdfBtn.disabled = false;
   }
+}
+
+startMeetingBtn.addEventListener("click", () => {
+  if (isRecording) stopRecording();
+  else startRecording();
 });
 
-themeSwitch.addEventListener("click", () => {
-  const next = document.body.getAttribute("data-theme") === "dark" ? "bright" : "dark";
-  applyTheme(next);
+refreshBtn.addEventListener("click", () => {
+  hardReset();
+});
+
+generateMinutesBtn.addEventListener("click", () => {
+  generateMinutes();
+});
+
+downloadPdfBtn.addEventListener("click", () => {
+  downloadMinutesPdf();
+});
+
+meetingLanguageSelect.addEventListener("change", () => {
+  if (isRecording) return;
+  if (recognition) recognition.lang = meetingLanguageSelect.value;
+  retranslateAllFinalSegments();
+  updateStatus(`Meeting language set to ${languageName(meetingLanguageSelect.value)}.`);
+});
+
+interpretationLanguageSelect.addEventListener("change", () => {
+  if (isRecording) return;
+  retranslateAllFinalSegments();
+  updateStatus(`Interpretation language set to ${languageName(interpretationLanguageSelect.value)}.`);
+});
+
+minuteLanguageSelect.addEventListener("change", () => {
+  updateStatus(`Minute language set to ${languageName(minuteLanguageSelect.value)}.`);
 });
 
 document.addEventListener("visibilitychange", () => {
@@ -632,14 +788,15 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-window.addEventListener("resize", fitTitleOneLine);
+window.addEventListener("resize", () => {
+  autoGrow(meetingTranscript);
+  autoGrow(interpretationTranscript);
+});
 
 (function init() {
-  const savedTheme = localStorage.getItem("meeting-theme");
-  applyTheme(savedTheme === "dark" ? "dark" : "bright");
   resetTimer();
-  updateSectionLabels();
-  resetTranscriptAndNotes();
-  updateStatus("녹음을 시작하세요.");
-  fitTitleOneLine();
+  resetTranscripts();
+  resetMinutesOutput();
+  updateStartButtonState();
+  updateStatus("Ready to start.");
 })();

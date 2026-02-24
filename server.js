@@ -90,6 +90,14 @@ function getLanguageProfile(languageCode = "ko-KR") {
       notesInstruction: "Korean"
     };
   }
+  if (languageCode.startsWith("es")) {
+    return {
+      languageCode: "es-ES",
+      sttHints: ["reunion", "agenda", "decision", "responsable", "la proxima semana"],
+      transcriptInstruction: "Spanish.",
+      notesInstruction: "Spanish"
+    };
+  }
   if (languageCode.startsWith("zh")) {
     return {
       languageCode: "zh-CN",

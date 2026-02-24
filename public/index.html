@@ -1,91 +1,115 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>WOOSIK'S MEETING MINUTE GENERATOR</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Real-time Interpretation & Minutes Generator</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Space+Grotesk:wght@600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body data-theme="bright">
-    <div class="bg-shape bg-shape-a"></div>
-    <div class="bg-shape bg-shape-b"></div>
-
+  <body>
     <main class="app-shell">
-      <header class="card hero">
-        <div class="hero-top">
-          <div class="theme-switch-wrap">
-            <span class="theme-label">Bright</span>
-            <button id="themeSwitch" class="theme-switch" aria-label="Theme Switch" aria-pressed="false">
-              <span class="theme-knob"></span>
-            </button>
-            <span class="theme-label">Dark</span>
-          </div>
+      <header class="app-title">Real-time Interpretation & Minutes Generator</header>
+
+      <section class="step-card">
+        <div class="step-head">
+          <span class="step-chip">Step 1</span>
+          <h2>Language Selection & Transcription Start</h2>
         </div>
 
-        <h1 id="appTitle">WOOSIK'S MEETING MINUTE GENERATOR</h1>
-        <p id="status" class="status-text">녹음을 시작하면 실시간 전사와 통역이 표시됩니다.</p>
+        <div class="language-grid">
+          <label class="language-tile" for="meetingLanguage">
+            <span>Meeting Language</span>
+            <div class="select-wrap">
+              <select id="meetingLanguage">
+                <option value="ko-KR">Korean</option>
+                <option value="en-US" selected>English</option>
+                <option value="zh-CN">Chinese</option>
+                <option value="ja-JP">Japanese</option>
+                <option value="es-ES">Spanish</option>
+              </select>
+            </div>
+          </label>
 
-        <div class="language-tabs" id="languageTabs">
-          <button class="lang-tab active" data-lang="ko-KR">한국어</button>
-          <button class="lang-tab" data-lang="en-US">English</button>
-          <button class="lang-tab" data-lang="ja-JP">日本語</button>
-          <button class="lang-tab" data-lang="zh-CN">中文</button>
-        </div>
-      </header>
+          <label class="language-tile" for="interpretationLanguage">
+            <span>Interpretation Language</span>
+            <div class="select-wrap">
+              <select id="interpretationLanguage">
+                <option value="ko-KR">Korean</option>
+                <option value="en-US" selected>English</option>
+                <option value="zh-CN">Chinese</option>
+                <option value="ja-JP">Japanese</option>
+                <option value="es-ES">Spanish</option>
+              </select>
+            </div>
+          </label>
 
-      <section class="card flow-card">
-        <div class="card-head">
-          <h2><span class="step-chip">Step 1</span> 실시간 전사 시작</h2>
+          <label class="language-tile" for="minuteLanguage">
+            <span>Minute Language</span>
+            <div class="select-wrap">
+              <select id="minuteLanguage">
+                <option value="ko-KR">Korean</option>
+                <option value="en-US" selected>English</option>
+                <option value="zh-CN">Chinese</option>
+                <option value="ja-JP">Japanese</option>
+                <option value="es-ES">Spanish</option>
+              </select>
+            </div>
+          </label>
         </div>
-        <div class="record-controls">
-          <button id="recordBtn" class="record-btn" aria-label="Record Toggle">
-            <span id="recordTimer">00:00.00</span>
+
+        <div class="control-row">
+          <button id="startMeetingBtn" class="start-meeting-btn" type="button">
+            <span id="startMeetingLabel">Start Meeting</span>
+            <strong id="meetingTimer">00:00.00</strong>
           </button>
-          <button id="refreshBtn" class="refresh-btn">Refresh</button>
+          <button id="refreshBtn" class="refresh-btn" type="button" aria-label="Refresh">
+            <span aria-hidden="true">&#10227;</span>
+          </button>
+        </div>
+
+        <p id="statusText" class="status-text">Ready to start.</p>
+      </section>
+
+      <section class="step-card">
+        <div class="step-head">
+          <span class="step-chip">Step 2</span>
+          <h2>Real-time Transcription & Translation View</h2>
+        </div>
+
+        <div class="transcript-block">
+          <label for="meetingTranscript">Meeting Language Transcription</label>
+          <textarea id="meetingTranscript" readonly></textarea>
+        </div>
+
+        <div class="transcript-block">
+          <label for="interpretationTranscript">Interpretation Language Transcription</label>
+          <textarea id="interpretationTranscript" readonly></textarea>
         </div>
       </section>
 
-      <section class="card transcript-card">
-        <div class="card-head">
-          <h2><span class="step-chip">Step 2</span> 실시간 전사 내용</h2>
+      <section class="step-card">
+        <div class="step-head">
+          <span class="step-chip">Step 3</span>
+          <h2>Generate Minutes & Download PDF</h2>
         </div>
 
-        <div class="dual-transcript">
-          <div class="panel">
-            <h3>원문 전사</h3>
-            <textarea
-              id="transcriptOriginal"
-              placeholder="실시간 음성 전사가 여기에 표시됩니다."
-              readonly
-            ></textarea>
-          </div>
-          <div class="panel">
-            <h3>한국어 통역</h3>
-            <textarea
-              id="transcriptKorean"
-              placeholder="외국어 선택 시 한국어 통역이 여기에 표시됩니다."
-              readonly
-            ></textarea>
-          </div>
+        <div class="minutes-actions">
+          <button id="generateMinutesBtn" class="minutes-btn" type="button">
+            Start Generating Minutes
+          </button>
+          <button id="downloadPdfBtn" class="pdf-btn" type="button">Download PDF</button>
         </div>
 
-        <div class="step2-footer">
-          <button id="notesBtn" class="accent">회의 요약 생성</button>
+        <div class="minutes-block">
+          <label for="minutesOutput">Minutes</label>
+          <article id="minutesOutput" class="minutes-output">No minutes generated yet.</article>
         </div>
-      </section>
-
-      <section class="card notes-card">
-        <div class="card-head">
-          <h2 id="notesTitle"><span class="step-chip">Step 3</span> 회의 요약 결과</h2>
-          <button id="pdfBtn" class="secondary">PDF로 다운로드</button>
-        </div>
-        <div id="notesOutput" class="notes-output">아직 생성된 결과가 없습니다.</div>
       </section>
     </main>
 
