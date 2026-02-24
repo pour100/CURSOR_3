@@ -97,6 +97,27 @@ function decodeHtmlEntities(text = "") {
     .replace(/&gt;/g, ">");
 }
 
+function looksLikeNonTranslation(text = "") {
+  const value = String(text || "").trim().toLowerCase();
+  if (!value) return true;
+
+  const badMarkers = [
+    "ambiguous sentence",
+    "provide more context",
+    "specify the subject",
+    "i don't know",
+    "what are you talking about",
+    "cannot translate",
+    "as an ai",
+    "<source>",
+    "</source>",
+    "i will translate exactly",
+    "translate the exact content"
+  ];
+
+  return badMarkers.some((marker) => value.includes(marker));
+}
+
 function getLanguageProfile(languageCode = "ko-KR") {
   if (languageCode.startsWith("ko")) {
     return {
@@ -226,8 +247,15 @@ async function generateTextWithModelFallback(prompt, candidates = geminiModelCan
     try {
       const model = genAI.getGenerativeModel({ model: modelName });
       const result = await model.generateContent(prompt);
+      const responseText = result.response.text().trim();
+      if (looksLikeNonTranslation(responseText)) {
+        lastError = new Error(
+          `Model ${modelName} returned non-translation text: ${responseText.slice(0, 120)}`
+        );
+        continue;
+      }
       return {
-        text: result.response.text(),
+        text: responseText,
         modelName
       };
     } catch (error) {
@@ -567,10 +595,24 @@ Source language hint: ${sourceProfile.languageCode}
 <source>${text}</source>
 `.trim();
 
-    const { text: translatedText, modelName } = await generateTranslationTextWithFallback(
-      prompt,
-      geminiTranslateModelCandidates
-    );
+    let translatedText = "";
+    let modelName = "gemini-unavailable";
+    try {
+      const generated = await generateTranslationTextWithFallback(
+        prompt,
+        geminiTranslateModelCandidates
+      );
+      translatedText = generated.text;
+      modelName = generated.modelName;
+    } catch (geminiError) {
+      return res.json({
+        translatedText: text.trim(),
+        model: "pass-through",
+        warning: geminiError.message,
+        sourceLanguageCode: sourceProfile.languageCode,
+        targetLanguageCode: targetProfile.languageCode
+      });
+    }
 
     return res.json({
       translatedText: translatedText.trim(),
