@@ -247,15 +247,8 @@ async function generateTextWithModelFallback(prompt, candidates = geminiModelCan
     try {
       const model = genAI.getGenerativeModel({ model: modelName });
       const result = await model.generateContent(prompt);
-      const responseText = result.response.text().trim();
-      if (looksLikeNonTranslation(responseText)) {
-        lastError = new Error(
-          `Model ${modelName} returned non-translation text: ${responseText.slice(0, 120)}`
-        );
-        continue;
-      }
       return {
-        text: responseText,
+        text: result.response.text(),
         modelName
       };
     } catch (error) {
@@ -297,8 +290,15 @@ async function generateTranslationTextWithFallback(
         }
       });
       const result = await model.generateContent(prompt);
+      const responseText = result.response.text().trim();
+      if (looksLikeNonTranslation(responseText)) {
+        lastError = new Error(
+          `Model ${modelName} returned non-translation text: ${responseText.slice(0, 120)}`
+        );
+        continue;
+      }
       return {
-        text: result.response.text(),
+        text: responseText,
         modelName
       };
     } catch (error) {
