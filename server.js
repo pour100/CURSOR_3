@@ -240,6 +240,46 @@ async function translateWithGoogleRest(text, sourceLanguageCode, targetLanguageC
   return decodeHtmlEntities(translatedText);
 }
 
+async function translateWithPublicGoogleEndpoint(
+  text,
+  sourceLanguageCode,
+  targetLanguageCode
+) {
+  const source = sourceLanguageCode
+    ? toTranslateLanguageCode(sourceLanguageCode)
+    : "auto";
+  const target = toTranslateLanguageCode(targetLanguageCode);
+  const params = new URLSearchParams({
+    client: "gtx",
+    sl: source,
+    tl: target,
+    dt: "t",
+    q: text
+  });
+
+  const endpoint = `https://translate.googleapis.com/translate_a/single?${params.toString()}`;
+  const response = await fetch(endpoint, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(`Public translate endpoint HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (!Array.isArray(payload) || !Array.isArray(payload[0])) {
+    throw new Error("Public translate endpoint returned unexpected payload.");
+  }
+
+  const translatedText = payload[0]
+    .map((chunk) => (Array.isArray(chunk) ? chunk[0] || "" : ""))
+    .join("")
+    .trim();
+
+  if (!translatedText) {
+    throw new Error("Public translate endpoint returned empty translatedText.");
+  }
+
+  return decodeHtmlEntities(translatedText);
+}
+
 async function generateTextWithModelFallback(prompt, candidates = geminiModelCandidates) {
   let lastError = null;
 
@@ -554,15 +594,33 @@ app.post("/api/translate", async (req, res) => {
           targetLanguageCode: targetProfile.languageCode
         });
       } catch (googleError) {
-        console.warn("Google Translate REST fallback to Gemini:", googleError.message);
+        console.warn("Google Translate REST fallback:", googleError.message);
       }
     }
 
+    try {
+      const translatedText = await translateWithPublicGoogleEndpoint(
+        text,
+        sourceProfile.languageCode,
+        targetProfile.languageCode
+      );
+      return res.json({
+        translatedText: translatedText.trim(),
+        model: "google-translate-public",
+        sourceLanguageCode: sourceProfile.languageCode,
+        targetLanguageCode: targetProfile.languageCode
+      });
+    } catch (publicGoogleError) {
+      console.warn("Public translate endpoint fallback to Gemini:", publicGoogleError.message);
+    }
+
     if (!genAI) {
-      return res.status(500).json({
-        error: "Translation is not configured.",
-        detail:
-          "Enable Google Translate API for GOOGLE_STT_API_KEY/GOOGLE_API_KEY, or set GEMINI_API_KEY."
+      return res.json({
+        translatedText: text.trim(),
+        model: "pass-through",
+        warning: "Translation provider unavailable, returned source text.",
+        sourceLanguageCode: sourceProfile.languageCode,
+        targetLanguageCode: targetProfile.languageCode
       });
     }
 
