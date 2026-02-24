@@ -80,6 +80,23 @@ function normalizeMimeType(mimetype, encoding) {
   return "audio/webm";
 }
 
+function toTranslateLanguageCode(languageCode = "en-US") {
+  if (languageCode.startsWith("ko")) return "ko";
+  if (languageCode.startsWith("ja")) return "ja";
+  if (languageCode.startsWith("zh")) return "zh-CN";
+  if (languageCode.startsWith("es")) return "es";
+  return "en";
+}
+
+function decodeHtmlEntities(text = "") {
+  return String(text)
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
 function getLanguageProfile(languageCode = "ko-KR") {
   if (languageCode.startsWith("ko")) {
     return {
@@ -162,6 +179,44 @@ async function transcribeWithApiKey(audioContentBase64, config) {
   }
 
   return payload;
+}
+
+async function translateWithGoogleRest(text, sourceLanguageCode, targetLanguageCode) {
+  if (!sttApiKey) {
+    throw new Error("No Google API key configured for Google Translate REST.");
+  }
+
+  const endpoint = `https://translation.googleapis.com/language/translate/v2?key=${sttApiKey}`;
+  const body = {
+    q: text,
+    target: toTranslateLanguageCode(targetLanguageCode),
+    format: "text",
+    model: "nmt"
+  };
+
+  if (sourceLanguageCode) {
+    body.source = toTranslateLanguageCode(sourceLanguageCode);
+  }
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  const payload = await response.json();
+  if (!response.ok || payload?.error) {
+    const detail =
+      payload?.error?.message || `Google Translate REST HTTP ${response.status}`;
+    throw new Error(detail);
+  }
+
+  const translatedText = payload?.data?.translations?.[0]?.translatedText;
+  if (!translatedText) {
+    throw new Error("Google Translate REST returned empty translatedText.");
+  }
+
+  return decodeHtmlEntities(translatedText);
 }
 
 async function generateTextWithModelFallback(prompt, candidates = geminiModelCandidates) {
@@ -443,13 +498,6 @@ ${transcript}
 
 app.post("/api/translate", async (req, res) => {
   try {
-    if (!genAI) {
-      return res.status(500).json({
-        error: "Gemini is not configured.",
-        detail: "Set GEMINI_API_KEY or GOOGLE_API_KEY."
-      });
-    }
-
     const {
       text,
       sourceLanguageCode = "en-US",
@@ -463,6 +511,32 @@ app.post("/api/translate", async (req, res) => {
 
     const sourceProfile = getLanguageProfile(sourceLanguageCode);
     const targetProfile = getLanguageProfile(targetLanguageCode);
+
+    if (sttApiKey) {
+      try {
+        const translatedText = await translateWithGoogleRest(
+          text,
+          sourceProfile.languageCode,
+          targetProfile.languageCode
+        );
+        return res.json({
+          translatedText: translatedText.trim(),
+          model: "google-translate-rest",
+          sourceLanguageCode: sourceProfile.languageCode,
+          targetLanguageCode: targetProfile.languageCode
+        });
+      } catch (googleError) {
+        console.warn("Google Translate REST fallback to Gemini:", googleError.message);
+      }
+    }
+
+    if (!genAI) {
+      return res.status(500).json({
+        error: "Translation is not configured.",
+        detail:
+          "Enable Google Translate API for GOOGLE_STT_API_KEY/GOOGLE_API_KEY, or set GEMINI_API_KEY."
+      });
+    }
 
     const prompt = fast
       ? `
