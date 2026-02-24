@@ -178,6 +178,12 @@ function installTapFeedback() {
   });
 }
 
+function capitalizeSentenceStarts(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  return value.replace(/(^|[.!?]\s+)([a-z])/g, (match, prefix, chr) => `${prefix}${chr.toUpperCase()}`);
+}
+
 function updateStartButtonState() {
   if (isRecording) {
     startMeetingBtn.classList.add("recording");
@@ -361,6 +367,73 @@ async function translateTextWithRetry(text, sourceLanguageCode, targetLanguageCo
   throw lastError || new Error("Translation failed");
 }
 
+async function translateMinutesField(text, sourceLanguageCode, targetLanguageCode) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  if (isSameLanguage(sourceLanguageCode, targetLanguageCode)) {
+    return capitalizeSentenceStarts(value);
+  }
+
+  try {
+    const translated = await translateText(value, sourceLanguageCode, targetLanguageCode, {
+      fast: false,
+      timeoutMs: 5200
+    });
+    return capitalizeSentenceStarts(translated || value);
+  } catch (_error) {
+    return capitalizeSentenceStarts(value);
+  }
+}
+
+async function localizeMinutesData(minutesData, sourceLanguageCode, targetLanguageCode) {
+  const summaryPromise = translateMinutesField(
+    minutesData.summary || "",
+    sourceLanguageCode,
+    targetLanguageCode
+  );
+
+  const keyPointsPromise = Promise.all(
+    (Array.isArray(minutesData.keyPoints) ? minutesData.keyPoints : []).map((item) =>
+      translateMinutesField(item, sourceLanguageCode, targetLanguageCode)
+    )
+  );
+
+  const actionItemsPromise = Promise.all(
+    (Array.isArray(minutesData.actionItems) ? minutesData.actionItems : []).map(async (item) => {
+      const translatedTask = await translateMinutesField(
+        item.task || "",
+        sourceLanguageCode,
+        targetLanguageCode
+      );
+      const translatedDue = await translateMinutesField(
+        item.due || "",
+        sourceLanguageCode,
+        targetLanguageCode
+      );
+      return {
+        owner: item.owner || "TBD",
+        task: translatedTask || item.task || "",
+        due: translatedDue || item.due || "TBD"
+      };
+    })
+  );
+
+  const risksPromise = Promise.all(
+    (Array.isArray(minutesData.risks) ? minutesData.risks : []).map((item) =>
+      translateMinutesField(item, sourceLanguageCode, targetLanguageCode)
+    )
+  );
+
+  const [summary, keyPoints, actionItems, risks] = await Promise.all([
+    summaryPromise,
+    keyPointsPromise,
+    actionItemsPromise,
+    risksPromise
+  ]);
+
+  return { summary, keyPoints, actionItems, risks };
+}
+
 function queueFinalInterpretation(segment, runId) {
   const sourceLanguage = meetingLanguageSelect.value;
   const targetLanguage = interpretationLanguageSelect.value;
@@ -417,6 +490,8 @@ function scheduleInterimInterpretation(runId) {
   }
   if (text === lastInterimTranslationSource) return;
   lastInterimTranslationSource = text;
+  interimInterpretationSegment = text;
+  renderTranscriptBoxes();
 
   const token = ++interimTranslateToken;
   interimTranslateTimer = setTimeout(async () => {
@@ -424,7 +499,9 @@ function scheduleInterimInterpretation(runId) {
     interimAbortController = new AbortController();
 
     try {
-      const translatedText = await translateTextWithRetry(text, sourceLanguage, targetLanguage, {
+      const translatedText = await translateText(text, sourceLanguage, targetLanguage, {
+        fast: true,
+        timeoutMs: 1800,
         signal: interimAbortController.signal
       });
       if (token !== interimTranslateToken || runId !== interpretationRunId) return;
@@ -435,7 +512,7 @@ function scheduleInterimInterpretation(runId) {
       interimInterpretationSegment = text;
       renderTranscriptBoxes();
     }
-  }, 220);
+  }, 15);
 }
 
 function setupRecognition() {
@@ -672,17 +749,31 @@ function buildQuickMinutes(transcript) {
     .slice(0, 6)
     .map((item) => item.slice(0, 220));
   return {
-    summary: summary || "None",
-    keyPoints,
-    actionItems,
-    risks
+    summary: capitalizeSentenceStarts(summary || "None"),
+    keyPoints: keyPoints.map((item) => capitalizeSentenceStarts(item)),
+    actionItems: actionItems.map((item) => ({
+      owner: item.owner || "TBD",
+      task: capitalizeSentenceStarts(item.task || ""),
+      due: capitalizeSentenceStarts(item.due || "TBD")
+    })),
+    risks: risks.map((item) => capitalizeSentenceStarts(item))
   };
 }
 function normalizeNotesResponse(payload) {
-  const summary = payload.summary || "";
-  const keyPoints = Array.isArray(payload.keyPoints) ? payload.keyPoints : [];
-  const actionItems = Array.isArray(payload.actionItems) ? payload.actionItems : [];
-  const risks = Array.isArray(payload.risks) ? payload.risks : [];
+  const summary = capitalizeSentenceStarts(payload.summary || "");
+  const keyPoints = Array.isArray(payload.keyPoints)
+    ? payload.keyPoints.map((item) => capitalizeSentenceStarts(item))
+    : [];
+  const actionItems = Array.isArray(payload.actionItems)
+    ? payload.actionItems.map((item) => ({
+        owner: item.owner || "TBD",
+        task: capitalizeSentenceStarts(item.task || ""),
+        due: capitalizeSentenceStarts(item.due || "TBD")
+      }))
+    : [];
+  const risks = Array.isArray(payload.risks)
+    ? payload.risks.map((item) => capitalizeSentenceStarts(item))
+    : [];
   return { summary, keyPoints, actionItems, risks };
 }
 
@@ -906,15 +997,22 @@ async function generateMinutes() {
     return;
   }
 
-  const quickMinutes = buildQuickMinutes(transcript);
-  latestMinutes = quickMinutes;
-  minutesOutput.innerHTML = renderMinutesHtml(quickMinutes);
+  const meetingLanguageCode = meetingLanguageSelect.value;
+  const minuteLanguageCode = minuteLanguageSelect.value;
+
+  const quickMinutes = await localizeMinutesData(
+    buildQuickMinutes(transcript),
+    meetingLanguageCode,
+    minuteLanguageCode
+  );
+  latestMinutes = normalizeNotesResponse(quickMinutes);
+  minutesOutput.innerHTML = renderMinutesHtml(latestMinutes);
   let timeoutId = null;
 
   try {
     generateMinutesBtn.disabled = true;
     updateStatus(
-      `Quick minutes ready. Refining in ${languageName(minuteLanguageSelect.value)}...`
+      `Quick minutes ready. Refining in ${languageName(minuteLanguageCode)}...`
     );
 
     const controller = new AbortController();
@@ -926,7 +1024,7 @@ async function generateMinutes() {
       signal: controller.signal,
       body: JSON.stringify({
         transcript,
-        languageCode: minuteLanguageSelect.value
+        languageCode: minuteLanguageCode
       })
     });
     clearTimeout(timeoutId);
@@ -936,7 +1034,14 @@ async function generateMinutes() {
       throw new Error(payload.detail || payload.error || "Failed to generate minutes");
     }
 
-    latestMinutes = normalizeNotesResponse(payload);
+    const rawMinutes = normalizeNotesResponse(payload);
+    const payloadLanguageCode = payload.languageCode || minuteLanguageCode;
+    const localizedMinutes = await localizeMinutesData(
+      rawMinutes,
+      payloadLanguageCode,
+      minuteLanguageCode
+    );
+    latestMinutes = normalizeNotesResponse(localizedMinutes);
     minutesOutput.innerHTML = renderMinutesHtml(latestMinutes);
     updateStatus("Minutes generated successfully.");
   } catch (error) {
