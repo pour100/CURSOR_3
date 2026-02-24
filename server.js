@@ -357,9 +357,11 @@ Analyze the transcript below and return JSON only.
 Keep JSON keys in English exactly as provided.
 Write all values in ${profile.notesInstruction}.
 Do not add any text outside JSON.
+The summary must be comprehensive and faithful to the transcript.
+Do not overly compress or omit important discussion points, context, decisions, disagreements, and rationale.
 Format:
 {
-  "summary": "3-5 sentence summary",
+  "summary": "Detailed, comprehensive summary that preserves important details from the full conversation",
   "keyPoints": ["Point 1", "Point 2"],
   "actionItems": [{"owner":"owner", "task":"task", "due":"date or TBD"}],
   "risks": ["risk 1"]
@@ -424,14 +426,20 @@ app.post("/api/translate", async (req, res) => {
     const targetProfile = getLanguageProfile(targetLanguageCode);
 
     const prompt = fast
-      ? `Translate this to ${targetProfile.notesInstruction}. Return translated text only.\n\n${text}`
+      ? `Translate this into ${targetProfile.notesInstruction} only.
+Return translated text only.
+Do not include source-language words unless they are proper names, brands, or unavoidable technical terms.
+Do not add explanations.
+
+${text}`
       : `
 You are a real-time interpreter.
 Translate the source sentence into ${targetProfile.notesInstruction}.
 Rules:
 - Keep meaning and tone.
-- No explanations.
 - Return only translated text.
+- Do not copy source-language words unless they are proper names, brands, or unavoidable technical terms.
+- If unsure, still provide the best natural translation in the target language only.
 
 Source language hint: ${sourceProfile.languageCode}
 Text:

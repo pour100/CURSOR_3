@@ -14,10 +14,12 @@ const interpretationTranscript = document.getElementById("interpretationTranscri
 const generateMinutesBtn = document.getElementById("generateMinutesBtn");
 const downloadPdfBtn = document.getElementById("downloadPdfBtn");
 const minutesOutput = document.getElementById("minutesOutput");
+const appTitle = document.getElementById("appTitle");
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 const DEFAULT_MINUTES_TEXT = "No minutes generated yet.";
+const TRANSLATION_PLACEHOLDER = "...";
 const LANGUAGE_NAMES = {
   "ko-KR": "Korean",
   "en-US": "English",
@@ -58,6 +60,70 @@ function languageFamily(code) {
 
 function isSameLanguage(sourceCode, targetCode) {
   return languageFamily(sourceCode) === languageFamily(targetCode);
+}
+
+function fitTitleToSingleLine() {
+  if (!appTitle) return;
+  let fontSize = window.innerWidth < 860 ? 26 : 56;
+  appTitle.style.fontSize = `${fontSize}px`;
+  appTitle.style.whiteSpace = "nowrap";
+
+  while (fontSize > 11 && appTitle.scrollWidth > appTitle.clientWidth) {
+    fontSize -= 1;
+    appTitle.style.fontSize = `${fontSize}px`;
+  }
+}
+
+function normalizeSegment(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/[.,!?/\\\-~:;()[\]{}"']/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function shouldAppendFinalMeetingSegment(segment) {
+  const candidate = normalizeSegment(segment);
+  if (!candidate) return false;
+  const lastSegment = finalMeetingSegments[finalMeetingSegments.length - 1];
+  const last = normalizeSegment(lastSegment);
+  if (!last) return true;
+  if (candidate === last) return false;
+  if (candidate.length < 22 && (last.endsWith(candidate) || candidate.endsWith(last))) {
+    return false;
+  }
+  return true;
+}
+
+function detectScriptCount(text, expression) {
+  return (String(text || "").match(expression) || []).length;
+}
+
+function isTranslationLikelyInvalid(translatedText, targetLanguageCode, sourceText) {
+  const translated = String(translatedText || "").trim();
+  if (!translated) return true;
+
+  const source = String(sourceText || "").trim();
+  const sourceNorm = source.replace(/\s+/g, " ").toLowerCase();
+  const translatedNorm = translated.replace(/\s+/g, " ").toLowerCase();
+
+  if (sourceNorm.length > 16 && translatedNorm.includes(sourceNorm.slice(0, 18))) {
+    return true;
+  }
+
+  const visibleChars = translated.replace(/\s/g, "");
+  const len = visibleChars.length || 1;
+  const hangul = detectScriptCount(visibleChars, /[\u3131-\u318e\uac00-\ud7a3]/g) / len;
+  const latin = detectScriptCount(visibleChars, /[A-Za-z]/g) / len;
+  const han = detectScriptCount(visibleChars, /[\u4e00-\u9fff]/g) / len;
+  const kana = detectScriptCount(visibleChars, /[\u3040-\u30ff]/g) / len;
+
+  if (targetLanguageCode.startsWith("ko")) return hangul >= 0.18;
+  if (targetLanguageCode.startsWith("en")) return latin >= 0.35;
+  if (targetLanguageCode.startsWith("es")) return latin >= 0.28;
+  if (targetLanguageCode.startsWith("ja")) return kana + han >= 0.18;
+  if (targetLanguageCode.startsWith("zh")) return han >= 0.28;
+  return true;
 }
 
 function updateStatus(message) {
@@ -145,8 +211,11 @@ function renderTranscriptBoxes() {
   if (isSameLanguage(sourceLanguage, targetLanguage)) {
     interpretationTranscript.value = sourceText;
   } else {
+    const translatedFinalSegments = finalInterpretationSegments.filter(
+      (segment) => segment && segment !== TRANSLATION_PLACEHOLDER
+    );
     interpretationTranscript.value = composeTranscript(
-      finalInterpretationSegments,
+      translatedFinalSegments,
       interimInterpretationSegment
     );
   }
@@ -169,7 +238,8 @@ async function translateText(text, sourceLanguageCode, targetLanguageCode, optio
   if (!text || !text.trim()) return "";
   if (isSameLanguage(sourceLanguageCode, targetLanguageCode)) return text;
 
-  const cacheKey = `${sourceLanguageCode}|${targetLanguageCode}|${text}`;
+  const fast = options.fast !== false;
+  const cacheKey = `${sourceLanguageCode}|${targetLanguageCode}|${fast ? "fast" : "full"}|${text}`;
   if (translationCache.has(cacheKey)) {
     return translationCache.get(cacheKey);
   }
@@ -182,7 +252,7 @@ async function translateText(text, sourceLanguageCode, targetLanguageCode, optio
       text,
       sourceLanguageCode,
       targetLanguageCode,
-      fast: true
+      fast
     })
   });
 
@@ -196,6 +266,29 @@ async function translateText(text, sourceLanguageCode, targetLanguageCode, optio
   return translatedText;
 }
 
+async function translateTextWithRetry(text, sourceLanguageCode, targetLanguageCode, options = {}) {
+  const attemptModes = [true, false];
+  let lastError = null;
+
+  for (const fastMode of attemptModes) {
+    try {
+      const translated = await translateText(text, sourceLanguageCode, targetLanguageCode, {
+        signal: options.signal,
+        fast: fastMode
+      });
+      if (!isTranslationLikelyInvalid(translated, targetLanguageCode, text)) {
+        return translated;
+      }
+      lastError = new Error("Detected mixed-language translation output.");
+    } catch (error) {
+      lastError = error;
+      if (options.signal?.aborted) throw error;
+    }
+  }
+
+  throw lastError || new Error("Translation failed");
+}
+
 function queueFinalInterpretation(segment, runId) {
   const sourceLanguage = meetingLanguageSelect.value;
   const targetLanguage = interpretationLanguageSelect.value;
@@ -207,18 +300,17 @@ function queueFinalInterpretation(segment, runId) {
     return;
   }
 
-  const fallbackText = interimInterpretationSegment || segment;
-  const segmentIndex = finalInterpretationSegments.push(fallbackText) - 1;
+  const segmentIndex = finalInterpretationSegments.push(TRANSLATION_PLACEHOLDER) - 1;
 
-  translateText(segment, sourceLanguage, targetLanguage)
+  translateTextWithRetry(segment, sourceLanguage, targetLanguage)
     .then((translatedText) => {
       if (runId !== interpretationRunId) return;
-      finalInterpretationSegments[segmentIndex] = translatedText || segment;
+      finalInterpretationSegments[segmentIndex] = translatedText || "";
       renderTranscriptBoxes();
     })
     .catch(() => {
       if (runId !== interpretationRunId) return;
-      finalInterpretationSegments[segmentIndex] = segment;
+      finalInterpretationSegments[segmentIndex] = "";
       renderTranscriptBoxes();
     });
 }
@@ -248,15 +340,15 @@ function scheduleInterimInterpretation(runId) {
     interimAbortController = new AbortController();
 
     try {
-      const translatedText = await translateText(text, sourceLanguage, targetLanguage, {
+      const translatedText = await translateTextWithRetry(text, sourceLanguage, targetLanguage, {
         signal: interimAbortController.signal
       });
       if (token !== interimTranslateToken || runId !== interpretationRunId) return;
-      interimInterpretationSegment = translatedText || text;
+      interimInterpretationSegment = translatedText || "";
       renderTranscriptBoxes();
     } catch (_error) {
       if (token !== interimTranslateToken || runId !== interpretationRunId) return;
-      interimInterpretationSegment = text;
+      interimInterpretationSegment = "";
       renderTranscriptBoxes();
     }
   }, 35);
@@ -281,8 +373,10 @@ function setupRecognition() {
       if (!text) continue;
 
       if (result.isFinal) {
-        finalMeetingSegments.push(text);
-        queueFinalInterpretation(text, runId);
+        if (shouldAppendFinalMeetingSegment(text)) {
+          finalMeetingSegments.push(text);
+          queueFinalInterpretation(text, runId);
+        }
       } else {
         interimText += `${text} `;
       }
@@ -454,15 +548,15 @@ async function retranslateAllFinalSegments() {
   }
 
   for (const segment of finalMeetingSegments) {
-    let translated = segment;
+    let translated = "";
     try {
-      translated = await translateText(segment, sourceLanguage, targetLanguage);
+      translated = await translateTextWithRetry(segment, sourceLanguage, targetLanguage);
     } catch (_error) {
-      translated = segment;
+      translated = "";
     }
 
     if (runId !== interpretationRunId) return;
-    finalInterpretationSegments.push(translated || segment);
+    finalInterpretationSegments.push(translated || "");
     renderTranscriptBoxes();
   }
 }
@@ -498,20 +592,20 @@ function renderMinutesHtml(minutesData) {
       : "None";
 
   return [
-    `<strong>Summary</strong><br>${summary}`,
-    `<strong>Key Points</strong><br>${keyPoints}`,
-    `<strong>Action Items</strong><br>${actionItems}`,
-    `<strong>Risks</strong><br>${risks}`
+    `<strong>&#9679; Summary</strong><br>${summary}`,
+    `<strong>&#9679; Key Points</strong><br>${keyPoints}`,
+    `<strong>&#9679; Action Items</strong><br>${actionItems}`,
+    `<strong>&#9679; Risks</strong><br>${risks}`
   ].join("<br><br>");
 }
 
 function renderMinutesText(minutesData) {
   const lines = [];
-  lines.push("Summary");
+  lines.push("● Summary");
   lines.push(minutesData.summary || "None");
   lines.push("");
 
-  lines.push("Key Points");
+  lines.push("● Key Points");
   if (minutesData.keyPoints.length > 0) {
     minutesData.keyPoints.forEach((item, index) => {
       lines.push(`${index + 1}. ${item}`);
@@ -521,7 +615,7 @@ function renderMinutesText(minutesData) {
   }
   lines.push("");
 
-  lines.push("Action Items");
+  lines.push("● Action Items");
   if (minutesData.actionItems.length > 0) {
     minutesData.actionItems.forEach((item, index) => {
       const owner = item.owner || "TBD";
@@ -534,7 +628,7 @@ function renderMinutesText(minutesData) {
   }
   lines.push("");
 
-  lines.push("Risks");
+  lines.push("● Risks");
   if (minutesData.risks.length > 0) {
     minutesData.risks.forEach((item, index) => {
       lines.push(`${index + 1}. ${item}`);
@@ -559,13 +653,11 @@ async function buildPdfBlobFromText(text) {
   let y = margin;
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(18);
-  pdf.text("Meeting Minutes", margin, y);
-  y += 26;
+  pdf.text("Meeting Minute", pageWidth / 2, y, { align: "center" });
+  y += 30;
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(12);
-  pdf.text(`Minute Language: ${languageName(minuteLanguageSelect.value)}`, margin, y);
-  y += 24;
 
   const lines = pdf.splitTextToSize(text, usableWidth);
   for (const line of lines) {
@@ -597,10 +689,7 @@ async function buildPdfBlobFromHtml(htmlContent) {
   captureNode.style.fontSize = "14px";
   captureNode.style.lineHeight = "1.6";
   captureNode.innerHTML = `
-    <h1 style="margin:0 0 8px;font-size:24px;line-height:1.2;">Meeting Minutes</h1>
-    <p style="margin:0 0 18px;color:#333;">Minute Language: ${escapeHtml(
-      languageName(minuteLanguageSelect.value)
-    )}</p>
+    <h1 style="margin:0 0 18px;font-size:24px;line-height:1.2;text-align:center;">Meeting Minute</h1>
     ${htmlContent}
   `;
 
@@ -789,6 +878,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 window.addEventListener("resize", () => {
+  fitTitleToSingleLine();
   autoGrow(meetingTranscript);
   autoGrow(interpretationTranscript);
 });
@@ -799,4 +889,11 @@ window.addEventListener("resize", () => {
   resetMinutesOutput();
   updateStartButtonState();
   updateStatus("Ready to start.");
+  fitTitleToSingleLine();
 })();
+
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => {
+    fitTitleToSingleLine();
+  });
+}
