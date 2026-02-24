@@ -97,6 +97,13 @@ function shouldAppendFinalMeetingSegment(segment) {
   return true;
 }
 
+function ensureSentenceEnding(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  if (/[.!?。！？]$/.test(value)) return value;
+  return `${value}.`;
+}
+
 function detectScriptCount(text, expression) {
   return (String(text || "").match(expression) || []).length;
 }
@@ -241,31 +248,52 @@ async function translateText(text, sourceLanguageCode, targetLanguageCode, optio
   if (isSameLanguage(sourceLanguageCode, targetLanguageCode)) return text;
 
   const fast = options.fast !== false;
+  const timeoutMs = typeof options.timeoutMs === "number" ? options.timeoutMs : 4200;
   const cacheKey = `${sourceLanguageCode}|${targetLanguageCode}|${fast ? "fast" : "full"}|${text}`;
   if (translationCache.has(cacheKey)) {
     return translationCache.get(cacheKey);
   }
 
-  const response = await fetch("/api/translate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    signal: options.signal,
-    body: JSON.stringify({
-      text,
-      sourceLanguageCode,
-      targetLanguageCode,
-      fast
-    })
-  });
-
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.detail || payload.error || "Translation failed");
+  const timeoutController = new AbortController();
+  const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+  let externalAbortHandler = null;
+  if (options.signal) {
+    externalAbortHandler = () => timeoutController.abort();
+    options.signal.addEventListener("abort", externalAbortHandler, { once: true });
   }
 
-  const translatedText = payload.translatedText || "";
-  translationCache.set(cacheKey, translatedText);
-  return translatedText;
+  try {
+    let payload = {};
+    const response = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: timeoutController.signal,
+      body: JSON.stringify({
+        text,
+        sourceLanguageCode,
+        targetLanguageCode,
+        fast
+      })
+    });
+    const raw = await response.text();
+    try {
+      payload = raw ? JSON.parse(raw) : {};
+    } catch (_error) {
+      payload = {};
+    }
+    if (!response.ok) {
+      throw new Error(payload.detail || payload.error || raw || "Translation failed");
+    }
+
+    const translatedText = payload.translatedText || "";
+    translationCache.set(cacheKey, translatedText);
+    return translatedText;
+  } finally {
+    clearTimeout(timer);
+    if (externalAbortHandler && options.signal) {
+      options.signal.removeEventListener("abort", externalAbortHandler);
+    }
+  }
 }
 
 async function translateTextWithRetry(text, sourceLanguageCode, targetLanguageCode, options = {}) {
@@ -277,7 +305,8 @@ async function translateTextWithRetry(text, sourceLanguageCode, targetLanguageCo
     try {
       const translated = await translateText(text, sourceLanguageCode, targetLanguageCode, {
         signal: options.signal,
-        fast: fastMode
+        fast: fastMode,
+        timeoutMs: fastMode ? 2500 : 5200
       });
       if (translated && !fallbackCandidate) {
         fallbackCandidate = translated;
@@ -392,9 +421,10 @@ function setupRecognition() {
       if (!text) continue;
 
       if (result.isFinal) {
-        if (shouldAppendFinalMeetingSegment(text)) {
-          finalMeetingSegments.push(text);
-          queueFinalInterpretation(text, runId);
+        const endedText = ensureSentenceEnding(text);
+        if (shouldAppendFinalMeetingSegment(endedText)) {
+          finalMeetingSegments.push(endedText);
+          queueFinalInterpretation(endedText, runId);
         }
       } else {
         interimText += `${text} `;

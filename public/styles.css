@@ -100,7 +100,7 @@ body {
   display: flex;
   align-items: center;
   gap: clamp(8px, 1.5vw, 14px);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .step-chip {
@@ -123,6 +123,9 @@ body {
   line-height: 1.23;
   letter-spacing: 0.01em;
   font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .language-grid {
@@ -189,7 +192,7 @@ body {
 
 .control-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 68px;
+  grid-template-columns: minmax(0, 1fr) 74px;
   gap: clamp(8px, 1.3vw, 10px);
 }
 
@@ -246,9 +249,16 @@ body {
   font-size: clamp(2rem, 4vw, 2.9rem);
 }
 
-.refresh-btn span {
+.refresh-btn svg {
+  width: clamp(33px, 5.6vw, 44px);
+  height: clamp(33px, 5.6vw, 44px);
   transform: translateY(-1px);
   filter: drop-shadow(0 2px 2px rgba(9, 20, 48, 0.45));
+  fill: none;
+  stroke: #f4f8ff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .status-text {
@@ -373,7 +383,7 @@ select:disabled {
   }
 
   .control-row {
-    grid-template-columns: minmax(0, 1fr) 62px;
+    grid-template-columns: minmax(0, 1fr) 68px;
   }
 
   .minutes-actions {
