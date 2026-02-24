@@ -43,6 +43,8 @@ let interimTranslateTimer = null;
 let interimTranslateToken = 0;
 let interimAbortController = null;
 let interpretationRunId = 0;
+let lastInterimTranslationSource = "";
+let finalTranslationQueue = Promise.resolve();
 
 let timerInterval = null;
 let elapsedMs = 0;
@@ -64,7 +66,7 @@ function isSameLanguage(sourceCode, targetCode) {
 
 function fitTitleToSingleLine() {
   if (!appTitle) return;
-  let fontSize = window.innerWidth < 860 ? 26 : 56;
+  let fontSize = window.innerWidth < 860 ? 34 : 68;
   appTitle.style.fontSize = `${fontSize}px`;
   appTitle.style.whiteSpace = "nowrap";
 
@@ -269,6 +271,7 @@ async function translateText(text, sourceLanguageCode, targetLanguageCode, optio
 async function translateTextWithRetry(text, sourceLanguageCode, targetLanguageCode, options = {}) {
   const attemptModes = [true, false];
   let lastError = null;
+  let fallbackCandidate = "";
 
   for (const fastMode of attemptModes) {
     try {
@@ -276,6 +279,9 @@ async function translateTextWithRetry(text, sourceLanguageCode, targetLanguageCo
         signal: options.signal,
         fast: fastMode
       });
+      if (translated && !fallbackCandidate) {
+        fallbackCandidate = translated;
+      }
       if (!isTranslationLikelyInvalid(translated, targetLanguageCode, text)) {
         return translated;
       }
@@ -286,6 +292,7 @@ async function translateTextWithRetry(text, sourceLanguageCode, targetLanguageCo
     }
   }
 
+  if (fallbackCandidate) return fallbackCandidate;
   throw lastError || new Error("Translation failed");
 }
 
@@ -302,16 +309,25 @@ function queueFinalInterpretation(segment, runId) {
 
   const segmentIndex = finalInterpretationSegments.push(TRANSLATION_PLACEHOLDER) - 1;
 
-  translateTextWithRetry(segment, sourceLanguage, targetLanguage)
-    .then((translatedText) => {
-      if (runId !== interpretationRunId) return;
-      finalInterpretationSegments[segmentIndex] = translatedText || "";
-      renderTranscriptBoxes();
-    })
-    .catch(() => {
-      if (runId !== interpretationRunId) return;
-      finalInterpretationSegments[segmentIndex] = "";
-      renderTranscriptBoxes();
+  finalTranslationQueue = finalTranslationQueue
+    .catch(() => {})
+    .then(async () => {
+      try {
+        const translatedText = await translateTextWithRetry(
+          segment,
+          sourceLanguage,
+          targetLanguage
+        );
+        if (runId !== interpretationRunId) return;
+        finalInterpretationSegments[segmentIndex] = translatedText || segment;
+      } catch (_error) {
+        if (runId !== interpretationRunId) return;
+        finalInterpretationSegments[segmentIndex] = segment;
+      } finally {
+        if (runId === interpretationRunId) {
+          renderTranscriptBoxes();
+        }
+      }
     });
 }
 
@@ -330,9 +346,12 @@ function scheduleInterimInterpretation(runId) {
   const text = interimMeetingSegment.trim();
   if (!text) {
     interimInterpretationSegment = "";
+    lastInterimTranslationSource = "";
     renderTranscriptBoxes();
     return;
   }
+  if (text === lastInterimTranslationSource) return;
+  lastInterimTranslationSource = text;
 
   const token = ++interimTranslateToken;
   interimTranslateTimer = setTimeout(async () => {
@@ -344,14 +363,14 @@ function scheduleInterimInterpretation(runId) {
         signal: interimAbortController.signal
       });
       if (token !== interimTranslateToken || runId !== interpretationRunId) return;
-      interimInterpretationSegment = translatedText || "";
+      interimInterpretationSegment = translatedText || text;
       renderTranscriptBoxes();
     } catch (_error) {
       if (token !== interimTranslateToken || runId !== interpretationRunId) return;
-      interimInterpretationSegment = "";
+      interimInterpretationSegment = text;
       renderTranscriptBoxes();
     }
-  }, 35);
+  }, 220);
 }
 
 function setupRecognition() {
@@ -446,6 +465,7 @@ function stopRecording(message = "Meeting paused.") {
 
   interimMeetingSegment = "";
   interimInterpretationSegment = "";
+  lastInterimTranslationSource = "";
   renderTranscriptBoxes();
 
   setLanguageControlsDisabled(false);
@@ -476,6 +496,8 @@ function startRecording() {
   }
 
   interpretationRunId += 1;
+  finalTranslationQueue = Promise.resolve();
+  lastInterimTranslationSource = "";
   recognition.lang = meetingLanguageSelect.value;
   keepListening = true;
   isRecording = true;
@@ -507,11 +529,13 @@ function resetMinutesOutput() {
 function resetTranscripts() {
   interpretationRunId += 1;
   clearInterimTranslationWork();
+  finalTranslationQueue = Promise.resolve();
 
   finalMeetingSegments = [];
   finalInterpretationSegments = [];
   interimMeetingSegment = "";
   interimInterpretationSegment = "";
+  lastInterimTranslationSource = "";
 
   meetingTranscript.value = "";
   interpretationTranscript.value = "";
@@ -536,6 +560,8 @@ async function retranslateAllFinalSegments() {
   const runId = ++interpretationRunId;
 
   clearInterimTranslationWork();
+  finalTranslationQueue = Promise.resolve();
+  lastInterimTranslationSource = "";
   interimInterpretationSegment = "";
   finalInterpretationSegments = [];
   renderTranscriptBoxes();
@@ -548,17 +574,51 @@ async function retranslateAllFinalSegments() {
   }
 
   for (const segment of finalMeetingSegments) {
-    let translated = "";
+    let translated = segment;
     try {
       translated = await translateTextWithRetry(segment, sourceLanguage, targetLanguage);
     } catch (_error) {
-      translated = "";
+      translated = segment;
     }
 
     if (runId !== interpretationRunId) return;
-    finalInterpretationSegments.push(translated || "");
+    finalInterpretationSegments.push(translated || segment);
     renderTranscriptBoxes();
   }
+}
+
+function buildQuickMinutes(transcript) {
+  const compact = String(transcript || "").replace(/\s+/g, " ").trim();
+  const sentences = compact
+    .split(/(?<=[.!?。！？])\s+|\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const summary = sentences.slice(0, 10).join(" ").slice(0, 2200) || compact.slice(0, 2200);
+
+  const keyPoints = sentences.slice(0, 6).map((item) => item.slice(0, 220));
+
+  const actionPattern =
+    /(\bwill\b|\bshould\b|\bneed to\b|\bmust\b|\baction\b|\btodo\b|담당|해야|하기로|결정|일정|조치)/i;
+  const riskPattern =
+    /(\brisk\b|\bissue\b|\bblocker\b|\bdelay\b|\bconcern\b|\bproblem\b|리스크|문제|이슈|지연|우려)/i;
+
+  const actionItems = sentences
+    .filter((item) => actionPattern.test(item))
+    .slice(0, 6)
+    .map((task) => ({ owner: "TBD", task: task.slice(0, 220), due: "TBD" }));
+
+  const risks = sentences
+    .filter((item) => riskPattern.test(item))
+    .slice(0, 6)
+    .map((item) => item.slice(0, 220));
+
+  return {
+    summary: summary || "None",
+    keyPoints,
+    actionItems,
+    risks
+  };
 }
 
 function normalizeNotesResponse(payload) {
@@ -772,18 +832,30 @@ async function generateMinutes() {
     return;
   }
 
+  const quickMinutes = buildQuickMinutes(transcript);
+  latestMinutes = quickMinutes;
+  minutesOutput.innerHTML = renderMinutesHtml(quickMinutes);
+  let timeoutId = null;
+
   try {
     generateMinutesBtn.disabled = true;
-    updateStatus(`Generating minutes in ${languageName(minuteLanguageSelect.value)}...`);
+    updateStatus(
+      `Quick minutes ready. Refining in ${languageName(minuteLanguageSelect.value)}...`
+    );
+
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), 18000);
 
     const response = await fetch("/api/meeting-notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         transcript,
         languageCode: minuteLanguageSelect.value
       })
     });
+    clearTimeout(timeoutId);
 
     const payload = await response.json();
     if (!response.ok) {
@@ -794,8 +866,9 @@ async function generateMinutes() {
     minutesOutput.innerHTML = renderMinutesHtml(latestMinutes);
     updateStatus("Minutes generated successfully.");
   } catch (error) {
-    updateStatus(`Minutes generation failed: ${error.message}`);
+    updateStatus(`Using quick minutes mode: ${error.message}`);
   } finally {
+    if (timeoutId) clearTimeout(timeoutId);
     generateMinutesBtn.disabled = false;
   }
 }
